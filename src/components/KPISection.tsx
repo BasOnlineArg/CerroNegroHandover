@@ -26,13 +26,16 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
     let bklsGenerated = 0;
 
     data.forEach(entry => {
-      otsGenerated += entry.ots.length;
-      otsOpen += entry.ots.filter(ot => !ot.isClosed).length;
-      otsClosed += entry.ots.filter(ot => ot.isClosed).length;
-      avisosGenerated += entry.notifications.length;
-      bklsGenerated += entry.notifications.filter(n => 
-        n.avisoNumber.toUpperCase().startsWith('BKL') || 
-        n.description.toUpperCase().startsWith('BKL')
+      const ots = entry.ots || [];
+      const notifications = entry.notifications || [];
+      
+      otsGenerated += ots.length;
+      otsOpen += ots.filter(ot => !ot.isClosed).length;
+      otsClosed += ots.filter(ot => ot.isClosed).length;
+      avisosGenerated += notifications.length;
+      bklsGenerated += notifications.filter(n => 
+        (n.avisoNumber || '').toUpperCase().startsWith('BKL') || 
+        (n.description || '').toUpperCase().startsWith('BKL')
       ).length;
     });
 
@@ -113,6 +116,9 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
   const UserMetrics = () => {
     const userData = entries.reduce((acc: any, curr) => {
       const author = curr.author || 'Desconocido';
+      const ots = curr.ots || [];
+      const notifications = curr.notifications || [];
+
       if (!acc[author]) {
         acc[author] = { 
           handovers: 0, 
@@ -124,13 +130,13 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
         };
       }
       acc[author].handovers += 1;
-      acc[author].otsGenerated += curr.ots.length;
-      acc[author].otsOpen += curr.ots.filter(ot => !ot.isClosed).length;
-      acc[author].otsClosed += curr.ots.filter(ot => ot.isClosed).length;
-      acc[author].avisos += curr.notifications.length;
-      acc[author].bkls += curr.notifications.filter(n => 
-        n.avisoNumber.toUpperCase().startsWith('BKL') || 
-        n.description.toUpperCase().startsWith('BKL')
+      acc[author].otsGenerated += ots.length;
+      acc[author].otsOpen += ots.filter(ot => !ot.isClosed).length;
+      acc[author].otsClosed += ots.filter(ot => ot.isClosed).length;
+      acc[author].avisos += notifications.length;
+      acc[author].bkls += notifications.filter(n => 
+        (n.avisoNumber || '').toUpperCase().startsWith('BKL') || 
+        (n.description || '').toUpperCase().startsWith('BKL')
       ).length;
       return acc;
     }, {});

@@ -52,11 +52,11 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
             </div>
             <div>
               <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-black uppercase tracking-tight">{entry.author}</h2>
+                <h2 className="text-2xl font-black uppercase tracking-tight">{entry.author || 'Desconocido'}</h2>
                 <span className="bg-emerald-600/20 text-emerald-400 text-[9px] font-black px-3 py-1 rounded-full uppercase border border-emerald-500/30">Registro Cerrado</span>
               </div>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                {entry.shiftDate} | Sector {entry.fleet} | {formatTimestamp(entry.timestamp)}
+                {entry.shiftDate || 'Fecha no registrada'} | Sector {entry.fleet || 'N/A'} | {formatTimestamp(entry.timestamp)}
               </p>
             </div>
           </div>
@@ -129,12 +129,12 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rendimiento Turno</p>
                 <p className="text-sm font-black text-slate-800">
-                  {Math.round((entry.ots.filter(o => o.isClosed).length / (entry.ots.length || 1)) * 100)}% Completado
+                  {Math.round(((entry.ots || []).filter(o => o.isClosed).length / ((entry.ots || []).length || 1)) * 100)}% Completado
                 </p>
              </div>
              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Novedades Registradas</p>
-                <p className="text-sm font-black text-slate-800 uppercase">{entry.notifications.length} Avisos</p>
+                <p className="text-sm font-black text-slate-800 uppercase">{(entry.notifications || []).length} Avisos</p>
              </div>
           </div>
 
@@ -153,7 +153,7 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-50">
-                  {entry.ots.map((ot) => (
+                  {(entry.ots || []).map((ot) => (
                     <tr key={ot.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-8 py-5 text-sm font-bold text-blue-600">#{ot.otNumber}</td>
                       <td className="px-8 py-5 text-sm text-slate-600 font-medium">{ot.description}</td>
@@ -164,7 +164,7 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
                       </td>
                     </tr>
                   ))}
-                  {entry.ots.length === 0 && (
+                  {(!entry.ots || entry.ots.length === 0) && (
                     <tr><td colSpan={3} className="px-8 py-10 text-center text-slate-300 italic text-sm">Sin actividades registradas</td></tr>
                   )}
                 </tbody>
@@ -178,7 +178,7 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
               <i className="fa-solid fa-circle-exclamation text-amber-500"></i> Avisos y Hallazgos
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {entry.notifications.map((aviso) => (
+              {(entry.notifications || []).map((aviso) => (
                 <div key={aviso.id} className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm flex items-start gap-4">
                   <div className="p-3 bg-slate-100 rounded-xl text-slate-500">
                     <i className="fa-solid fa-clipboard-list text-xl"></i>
@@ -189,7 +189,7 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
                   </div>
                 </div>
               ))}
-              {entry.notifications.length === 0 && (
+              {(!entry.notifications || entry.notifications.length === 0) && (
                 <div className="col-span-full py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">
                   No se reportaron avisos adicionales
                 </div>
