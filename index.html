@@ -105,20 +105,7 @@
             { id: 'frm-18', name: 'Obras Temporales', icon: 'fa-trowel-bricks' }
         ];
 
-        const INITIAL_WHITELIST = [
-            { email: "admin.admin@newmont.com", pass: "Admin2026", role: UserRole.ADMIN },
-            { email: "andres.camejo@newmont.com", pass: "Andres01", role: UserRole.SUPERVISOR },
-            { email: "antonio.romero@newmont.com", pass: "Antonio01", role: UserRole.SUPERVISOR },
-            { email: "sebastian.palma@newmont.com", pass: "Sebastian01", role: UserRole.INSPECTOR_ESTRUCTURAL },
-            { email: "oscar.frete@newmont.com", pass: "Oscar01", role: UserRole.ESTRUCTURAL },
-            { email: "alexis.aman@newmont.com", pass: "Alexis01", role: UserRole.MULTIFLOTA },
-            { email: "leonel.quintana@newmont.com", pass: "Leonel01", role: UserRole.PERFO },
-            { email: "matias.cativa@newmont.com", pass: "Matias01", role: UserRole.ELECTRICO },
-            { email: "jose.perez@newmont.com", pass: "Jose01", role: UserRole.ELECTRICO },
-            { email: "pablo.aguilera@newmont.com", pass: "Pablo01", role: UserRole.PERFO },
-            { email: "tito.yugra@newmont.com", pass: "Tito01", role: UserRole.PYC },
-            { email: "gomeria.gomeria@newmont.com", pass: "Gomeria01", role: UserRole.GOMERIA },
-        ];
+        // Whitelist is now managed in Firestore collection 'whitelist'
 
         // Components
         const KPISection = ({ entries, title, isGlobal = false }) => {
@@ -279,69 +266,180 @@
             const [loginPass, setLoginPass] = useState('');
             const [loginError, setLoginError] = useState(null);
             const [isLoggingIn, setIsLoggingIn] = useState(false);
+            const [systemStatus, setSystemStatus] = useState('Iniciando sistema...');
+            const [forceShowForm, setForceShowForm] = useState(false);
+
+            // Mock Data for testing
+            const MOCK_ENTRIES = [
+                { id: 'mock-1', author: 'SISTEMA (DEMO)', fleet: FleetType.STRUCTURAL, shiftDate: '2026-03-17', timestamp: new Date().toISOString(), generalNotes: 'Inspección de rutina en puente grúa sector A. Sin novedades críticas.', ots: [{id: 'ot-1', otNumber: '10234', description: 'Lubricación rodamientos', isClosed: true}], notifications: [] },
+                { id: 'mock-2', author: 'SISTEMA (DEMO)', fleet: FleetType.ELECTRICAL, shiftDate: '2026-03-16', timestamp: new Date().toISOString(), generalNotes: 'Cambio de luminarias en taller principal.', ots: [{id: 'ot-2', otNumber: '10235', description: 'Reemplazo LED', isClosed: true}], notifications: [{id: 'av-1', avisoNumber: 'AV-001', description: 'Cableado expuesto en tablero 3'}] },
+                { id: 'mock-3', author: 'SISTEMA (DEMO)', fleet: FleetType.DRILLS, shiftDate: '2026-03-15', timestamp: new Date().toISOString(), generalNotes: 'Falla en sistema hidráulico de perforadora 05.', ots: [{id: 'ot-3', otNumber: '10236', description: 'Revisión fugas', isClosed: false}], notifications: [{id: 'av-2', avisoNumber: 'BKL-002', description: 'BKL: Manguera de alta presión con desgaste'}] }
+            ];
 
             useEffect(() => {
+                setSystemStatus('Verificando sesión...');
                 const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-                    setUser(currentUser);
-                    if (currentUser) {
-                        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                        if (userDoc.exists()) {
-                            setUserProfile(userDoc.data());
+                    try {
+                        if (currentUser) {
+                            // Validación de Whitelist en persistencia
+                            const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', currentUser.email.toLowerCase()));
+                            const whitelistSnap = await getDocs(whitelistQuery);
+                            
+                            if (whitelistSnap.empty) {
+                                setSystemStatus('Acceso revocado o no autorizado.');
+                                await signOut(auth);
+                                setUser(null);
+                                setUserProfile(null);
+                                return;
+                            }
+
+                            setUser(currentUser);
+                            setSystemStatus(`Usuario: ${currentUser.email}. Cargando perfil...`);
+                            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+                            if (userDoc.exists()) {
+                                setUserProfile(userDoc.data());
+                                setSystemStatus('Perfil cargado.');
+                            } else {
+                                setSystemStatus('Creando perfil...');
+                                const profile = {
+                                    uid: currentUser.uid,
+                                    email: currentUser.email,
+                                    displayName: currentUser.displayName || currentUser.email.split('@')[0],
+                                    role: UserRole.GOMERIA,
+                                    createdAt: new Date().toISOString()
+                                };
+                                await setDoc(doc(db, 'users', currentUser.uid), profile);
+                                setUserProfile(profile);
+                            }
+                            setForceShowForm(true); // Mandar directo al formulario
                         } else {
-                            // Basic profile if not exists
-                            const profile = {
-                                uid: currentUser.uid,
-                                email: currentUser.email,
-                                displayName: currentUser.displayName || currentUser.email.split('@')[0],
-                                role: UserRole.GOMERIA,
-                                createdAt: new Date()
-                            };
-                            setUserProfile(profile);
+                            setSystemStatus('Esperando inicio de sesión.');
+                            setUser(null);
+                            setUserProfile(null);
                         }
-                    } else {
-                        setUserProfile(null);
+                    } catch (err) {
+                        setSystemStatus(`Error Auth: ${err.message}`);
+                        console.error(err);
+                    } finally {
+                        setLoading(false);
                     }
-                    setLoading(false);
                 });
 
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!user) return;
+
+                setSystemStatus('Conectando con base de datos de pases...');
                 const q = query(collection(db, 'handovers'), orderBy('timestamp', 'desc'));
                 const unsubHistory = onSnapshot(q, (snapshot) => {
-                    setHistory(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+                    try {
+                        if (snapshot.empty) {
+                            setSystemStatus('Base de datos vacía. Cargando datos de prueba.');
+                            setHistory(MOCK_ENTRIES);
+                        } else {
+                            const data = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+                            setHistory(data);
+                            setSystemStatus(`Sincronizados ${data.length} registros.`);
+                        }
+                    } catch (err) {
+                        setSystemStatus(`Error en Firestore: ${err.message}`);
+                        setHistory(MOCK_ENTRIES); // Fallback to mock on error
+                    }
+                }, (err) => {
+                    setSystemStatus(`Error de conexión: ${err.message}`);
+                    setHistory(MOCK_ENTRIES);
                 });
 
-                return () => { unsubscribe(); unsubHistory(); };
-            }, []);
+                return () => unsubHistory();
+            }, [user]);
 
             const handleLogin = async (e) => {
                 e.preventDefault();
                 setIsLoggingIn(true);
                 setLoginError(null);
+                setSystemStatus('Validando Whitelist...');
                 try {
-                    const whitelistEntry = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === loginEmail.toLowerCase());
-                    if (whitelistEntry && whitelistEntry.pass === loginPass) {
-                        await signInWithEmailAndPassword(auth, loginEmail, loginPass).catch(async (err) => {
-                            if (err.code === 'auth/user-not-found') {
-                                await createUserWithEmailAndPassword(auth, loginEmail, loginPass);
-                            } else throw err;
+                    // 1. Validar contra colección whitelist en Firestore
+                    const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', loginEmail.toLowerCase()));
+                    const whitelistSnap = await getDocs(whitelistQuery);
+                    
+                    if (whitelistSnap.empty) {
+                        const errorMsg = "Acceso Denegado: Su correo no está autorizado para Cerro Negro. Contacte al administrador";
+                        setLoginError(errorMsg);
+                        setSystemStatus('Acceso Denegado.');
+                        
+                        // Log de Intento Fallido
+                        await addDoc(collection(db, 'logs'), {
+                            timestamp: serverTimestamp(),
+                            email: loginEmail,
+                            action: 'LOGIN_DENIED',
+                            reason: 'NOT_IN_WHITELIST'
                         });
-                    } else {
-                        setLoginError("Credenciales no autorizadas.");
+                        return;
                     }
+
+                    setSystemStatus('Autenticando...');
+                    await signInWithEmailAndPassword(auth, loginEmail, loginPass).catch(async (err) => {
+                        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+                            setSystemStatus('Registrando usuario autorizado...');
+                            await createUserWithEmailAndPassword(auth, loginEmail, loginPass);
+                        } else throw err;
+                    });
+
+                    setSystemStatus('Login exitoso.');
+                    setForceShowForm(true); // Mandar directo al formulario
+                    
+                    // Log de Intento Exitoso
+                    await addDoc(collection(db, 'logs'), {
+                        timestamp: serverTimestamp(),
+                        email: loginEmail,
+                        action: 'LOGIN_SUCCESS',
+                        userId: auth.currentUser?.uid
+                    });
+
                 } catch (err) {
-                    setLoginError(err.message);
+                    let friendlyError = err.message;
+                    if (err.code === 'auth/wrong-password') friendlyError = "Contraseña incorrecta.";
+                    setLoginError(friendlyError);
+                    setSystemStatus(`Error: ${friendlyError}`);
+                    
+                    // Log de Error
+                    await addDoc(collection(db, 'logs'), {
+                        timestamp: serverTimestamp(),
+                        email: loginEmail,
+                        action: 'LOGIN_ERROR',
+                        error: err.message
+                    });
                 } finally {
                     setIsLoggingIn(false);
                 }
             };
 
             const handleHandoverSubmit = async (entry) => {
+                setSystemStatus('Enviando pase...');
                 const id = crypto.randomUUID();
                 const newEntry = { ...entry, id, uid: user.uid, timestamp: new Date().toISOString() };
-                await setDoc(doc(db, 'handovers', id), newEntry);
-                await addDoc(collection(db, 'logs'), { timestamp: serverTimestamp(), userId: user.uid, userEmail: user.email, action: 'CREATE_HANDOVER', details: `Nuevo pase flota ${entry.fleet}` });
+                try {
+                    await setDoc(doc(db, 'handovers', id), newEntry);
+                    await addDoc(collection(db, 'logs'), { timestamp: serverTimestamp(), userId: user.uid, userEmail: user.email, action: 'CREATE_HANDOVER', details: `Nuevo pase flota ${entry.fleet}` });
+                    setSystemStatus('Pase enviado correctamente.');
+                    setForceShowForm(false);
+                } catch (err) {
+                    setSystemStatus(`Error al enviar: ${err.message}`);
+                }
             };
 
-            if (loading) return html`<div class="h-screen flex items-center justify-center text-white font-black uppercase tracking-widest">Cargando...</div>`;
+            if (loading) return html`
+                <div class="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-10">
+                    <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                    <p class="font-black uppercase tracking-widest animate-pulse">Iniciando Handover...</p>
+                    <div class="mt-10 p-4 bg-slate-800 rounded-xl border border-slate-700 text-[10px] font-mono text-blue-400 max-w-xs w-full text-center">
+                        STATUS: ${systemStatus}
+                    </div>
+                </div>
+            `;
 
             if (!user || !userProfile) {
                 return html`
@@ -357,9 +455,12 @@
                             <form onSubmit=${handleLogin} class="space-y-4">
                                 <input class="w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm" placeholder="Email" value=${loginEmail} onInput=${e => setLoginEmail(e.target.value)} required />
                                 <input type="password" class="w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm" placeholder="Contraseña" value=${loginPass} onInput=${e => setLoginPass(e.target.value)} required />
-                                ${loginError && html`<div class="text-red-500 text-[10px] font-bold uppercase">${loginError}</div>`}
-                                <button class="w-full bg-blue-600 text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg">Ingresar</button>
+                                ${loginError && html`<div class="text-red-500 text-[10px] font-bold uppercase border border-red-100 p-2 bg-red-50 rounded">${loginError}</div>`}
+                                <button class="w-full bg-blue-600 text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-blue-700 transition">Ingresar</button>
                             </form>
+                            <div class="p-3 bg-slate-100 rounded-lg text-[8px] font-mono text-slate-500 break-all">
+                                DEBUG: ${systemStatus}
+                            </div>
                         </div>
                     </div>
                 `;
@@ -368,105 +469,135 @@
             const filteredHistory = history.filter(h => h.fleet === activeFleet);
 
             return html`
-                <div class="flex h-screen bg-slate-900 overflow-hidden">
-                    <aside class="w-20 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-8 gap-6 shrink-0">
-                        <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
-                            <i class="fa-solid fa-mountain-sun text-white text-lg"></i>
-                        </div>
-                        ${Object.values(FleetType).map(fleet => html`
-                            <button 
-                                onClick=${() => setActiveFleet(fleet)}
-                                class="w-12 h-12 rounded-xl flex items-center justify-center transition-all ${activeFleet === fleet ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'}"
-                                title=${fleet}
-                            >
-                                <i class="fa-solid ${fleet === FleetType.STRUCTURAL ? 'fa-bridge' : fleet === FleetType.ELECTRICAL ? 'fa-bolt' : fleet === FleetType.DRILLS ? 'fa-bore-hole' : fleet === FleetType.AUXILIARY ? 'fa-truck-pickup' : fleet === FleetType.SHOVELS_TRUCKS ? 'fa-truck-monster' : fleet === FleetType.GOMERIA ? 'fa-circle-dot' : 'fa-chart-line'} text-sm"></i>
-                            </button>
-                        `)}
-                        <div class="mt-auto flex flex-col gap-4">
-                            <button onClick=${() => signOut(auth)} class="w-12 h-12 rounded-xl flex items-center justify-center text-slate-500 hover:text-red-400 transition">
-                                <i class="fa-solid fa-right-from-bracket text-sm"></i>
-                            </button>
-                        </div>
-                    </aside>
-
-                    <main class="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
-                        <header class="bg-white border-b px-10 py-6 flex justify-between items-center shrink-0 shadow-sm">
-                            <div>
-                                <h2 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sector Operativo</h2>
-                                <p class="text-2xl font-black text-slate-800">${activeFleet}</p>
+                <div class="flex h-screen bg-slate-900 overflow-hidden flex-col">
+                    <div class="flex flex-1 overflow-hidden">
+                        <aside class="w-20 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-8 gap-6 shrink-0">
+                            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
+                                <i class="fa-solid fa-mountain-sun text-white text-lg"></i>
                             </div>
-                            <div class="flex items-center gap-4">
-                                <div class="text-right">
-                                    <p class="text-[10px] font-black text-slate-800 uppercase">${userProfile?.displayName}</p>
-                                    <p class="text-[8px] font-bold text-slate-400 uppercase">${userProfile?.role}</p>
+                            ${Object.values(FleetType).map(fleet => html`
+                                <button 
+                                    onClick=${() => { setActiveFleet(fleet); setSelectedEntry(null); setForceShowForm(false); }}
+                                    class="w-12 h-12 rounded-xl flex items-center justify-center transition-all ${activeFleet === fleet ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'}"
+                                    title=${fleet}
+                                >
+                                    <i class="fa-solid ${fleet === FleetType.STRUCTURAL ? 'fa-bridge' : fleet === FleetType.ELECTRICAL ? 'fa-bolt' : fleet === FleetType.DRILLS ? 'fa-bore-hole' : fleet === FleetType.AUXILIARY ? 'fa-truck-pickup' : fleet === FleetType.SHOVELS_TRUCKS ? 'fa-truck-monster' : fleet === FleetType.GOMERIA ? 'fa-circle-dot' : 'fa-chart-line'} text-sm"></i>
+                                </button>
+                            `)}
+                            <div class="mt-auto flex flex-col gap-4">
+                                <button onClick=${() => signOut(auth)} class="w-12 h-12 rounded-xl flex items-center justify-center text-slate-500 hover:text-red-400 transition">
+                                    <i class="fa-solid fa-right-from-bracket text-sm"></i>
+                                </button>
+                            </div>
+                        </aside>
+
+                        <main class="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
+                            <header class="bg-white border-b px-10 py-6 flex justify-between items-center shrink-0 shadow-sm">
+                                <div>
+                                    <h2 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sector Operativo</h2>
+                                    <p class="text-2xl font-black text-slate-800">${activeFleet}</p>
                                 </div>
-                            </div>
-                        </header>
+                                <div class="flex items-center gap-4">
+                                    <button 
+                                        onClick=${() => setForceShowForm(!forceShowForm)}
+                                        class="bg-amber-500 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-amber-600 transition"
+                                    >
+                                        <i class="fa-solid fa-wrench mr-2"></i> Cargar Formulario Manual
+                                    </button>
+                                    <div class="text-right border-l pl-4 border-slate-200">
+                                        <p class="text-[10px] font-black text-slate-800 uppercase">${userProfile?.displayName}</p>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase">${userProfile?.role}</p>
+                                    </div>
+                                </div>
+                            </header>
 
-                        <div class="flex-1 overflow-y-auto p-10 custom-scrollbar">
-                            <div class="max-w-5xl mx-auto">
-                                ${selectedEntry ? html`
-                                    <div class="bg-white p-10 rounded-3xl shadow-xl border border-slate-200">
-                                        <button onClick=${() => setSelectedEntry(null)} class="mb-6 text-blue-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                            <i class="fa-solid fa-arrow-left"></i> Volver
-                                        </button>
-                                        <h2 class="text-2xl font-black text-slate-800 uppercase">${selectedEntry.author}</h2>
-                                        <p class="text-xs text-slate-400 font-bold uppercase mt-1">${selectedEntry.shiftDate} | ${selectedEntry.fleet}</p>
-                                        <div class="mt-8 space-y-6">
-                                            <div class="bg-slate-50 p-6 rounded-xl">
-                                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Observaciones</h4>
-                                                <p class="text-sm text-slate-700 leading-relaxed">${selectedEntry.generalNotes || 'Sin notas.'}</p>
-                                            </div>
-                                            <div class="grid grid-cols-2 gap-4">
-                                                <div class="bg-blue-50 p-4 rounded-xl">
-                                                    <p class="text-[10px] font-black text-blue-600 uppercase">OTs</p>
-                                                    <p class="text-lg font-black">${selectedEntry.ots?.length || 0}</p>
+                            <div class="flex-1 overflow-y-auto p-10 custom-scrollbar">
+                                <div class="max-w-5xl mx-auto">
+                                    ${selectedEntry ? html`
+                                        <div class="bg-white p-10 rounded-3xl shadow-xl border border-slate-200 animate-in slide-in-from-bottom-4 duration-300">
+                                            <button onClick=${() => setSelectedEntry(null)} class="mb-6 text-blue-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                                <i class="fa-solid fa-arrow-left"></i> Volver
+                                            </button>
+                                            <h2 class="text-2xl font-black text-slate-800 uppercase">${selectedEntry.author}</h2>
+                                            <p class="text-xs text-slate-400 font-bold uppercase mt-1">${selectedEntry.shiftDate} | ${selectedEntry.fleet}</p>
+                                            <div class="mt-8 space-y-6">
+                                                <div class="bg-slate-50 p-6 rounded-xl">
+                                                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Observaciones</h4>
+                                                    <p class="text-sm text-slate-700 leading-relaxed">${selectedEntry.generalNotes || 'Sin notas.'}</p>
                                                 </div>
-                                                <div class="bg-amber-50 p-4 rounded-xl">
-                                                    <p class="text-[10px] font-black text-amber-600 uppercase">Avisos</p>
-                                                    <p class="text-lg font-black">${selectedEntry.notifications?.length || 0}</p>
+                                                <div class="grid grid-cols-2 gap-4">
+                                                    <div class="bg-blue-50 p-4 rounded-xl">
+                                                        <p class="text-[10px] font-black text-blue-600 uppercase">OTs</p>
+                                                        <p class="text-lg font-black">${selectedEntry.ots?.length || 0}</p>
+                                                    </div>
+                                                    <div class="bg-amber-50 p-4 rounded-xl">
+                                                        <p class="text-[10px] font-black text-amber-600 uppercase">Avisos</p>
+                                                        <p class="text-lg font-black">${selectedEntry.notifications?.length || 0}</p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ` : html`
-                                    <${HandoverForm} fleet=${activeFleet} currentUser=${user} onSubmit=${handleHandoverSubmit} />
-                                    <${KPISection} entries=${filteredHistory} title="Métricas del Sector" />
-                                `}
+                                    ` : (forceShowForm || filteredHistory.length === 0) ? html`
+                                        <div class="animate-in fade-in duration-500">
+                                            <${HandoverForm} fleet=${activeFleet} currentUser=${user} onSubmit=${handleHandoverSubmit} />
+                                        </div>
+                                    ` : html`
+                                        <div class="bg-blue-50 border border-blue-100 p-6 rounded-2xl text-center mb-8">
+                                            <p class="text-xs font-black text-blue-800 uppercase tracking-widest">Modo Visualización</p>
+                                            <p class="text-[10px] text-blue-600 mt-1">Seleccione un registro del historial o use el botón "Cargar Formulario Manual" para crear uno nuevo.</p>
+                                        </div>
+                                        <${KPISection} entries=${filteredHistory} title="Métricas del Sector" />
+                                    `}
+                                </div>
                             </div>
-                        </div>
-                    </main>
+                        </main>
 
-                    <aside class="w-80 bg-white border-l border-slate-200 flex flex-col h-full shrink-0 shadow-sm overflow-hidden">
-                        <div class="p-6 border-b bg-white">
-                            <h3 class="font-black text-slate-800 text-[10px] uppercase tracking-widest">Historial Técnico</h3>
-                        </div>
-                        <div class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50 custom-scrollbar">
-                            ${filteredHistory.length === 0 && html`
-                                <div class="text-center py-20">
-                                    <i class="fa-solid fa-folder-open text-slate-200 text-3xl mb-4"></i>
-                                    <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">Sin registros</p>
-                                </div>
-                            `}
-                            ${filteredHistory.map(item => html`
-                                <div 
-                                    key=${item.id}
-                                    onClick=${() => setSelectedEntry(item)}
-                                    class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition cursor-pointer group"
-                                >
-                                    <div class="flex justify-between items-center mb-2">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase">${item.shiftDate}</span>
-                                        <i class="fa-solid fa-chevron-right text-[10px] text-slate-300 group-hover:text-blue-500"></i>
+                        <aside class="w-80 bg-white border-l border-slate-200 flex flex-col h-full shrink-0 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b bg-white flex justify-between items-center">
+                                <h3 class="font-black text-slate-800 text-[10px] uppercase tracking-widest">Historial Técnico</h3>
+                                <button onClick=${() => { setSelectedEntry(null); setForceShowForm(true); }} class="p-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition">
+                                    <i class="fa-solid fa-plus text-[10px]"></i>
+                                </button>
+                            </div>
+                            <div class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50 custom-scrollbar">
+                                ${filteredHistory.length === 0 && html`
+                                    <div class="text-center py-20">
+                                        <i class="fa-solid fa-folder-open text-slate-200 text-3xl mb-4"></i>
+                                        <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">Sin registros</p>
                                     </div>
-                                    <p class="text-xs font-black text-slate-800 uppercase truncate">${item.author}</p>
-                                    <div class="mt-3 flex gap-3">
-                                        <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tighter"><i class="fa-solid fa-wrench text-blue-500 mr-1"></i> ${item.ots?.length || 0} OTs</span>
-                                        <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tighter"><i class="fa-solid fa-bell text-amber-500 mr-1"></i> ${item.notifications?.length || 0} Avisos</span>
+                                `}
+                                ${filteredHistory.map(item => html`
+                                    <div 
+                                        key=${item.id}
+                                        onClick=${() => setSelectedEntry(item)}
+                                        class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition cursor-pointer group"
+                                    >
+                                        <div class="flex justify-between items-center mb-2">
+                                            <span class="text-[9px] font-bold text-slate-400 uppercase">${item.shiftDate}</span>
+                                            <i class="fa-solid fa-chevron-right text-[10px] text-slate-300 group-hover:text-blue-500"></i>
+                                        </div>
+                                        <p class="text-xs font-black text-slate-800 uppercase truncate">${item.author}</p>
+                                        <div class="mt-3 flex gap-3">
+                                            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tighter"><i class="fa-solid fa-wrench text-blue-500 mr-1"></i> ${item.ots?.length || 0} OTs</span>
+                                            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tighter"><i class="fa-solid fa-bell text-amber-500 mr-1"></i> ${item.notifications?.length || 0} Avisos</span>
+                                        </div>
                                     </div>
-                                </div>
-                            `)}
+                                `)}
+                            </div>
+                        </aside>
+                    </div>
+                    
+                    {/* System Status Console */}
+                    <footer class="bg-slate-950 border-t border-slate-800 px-6 py-2 flex justify-between items-center shrink-0">
+                        <div class="flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                            <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Estado del Sistema:</span>
+                            <span class="text-[9px] font-mono text-emerald-400">${systemStatus}</span>
                         </div>
-                    </aside>
+                        <div class="text-[8px] font-bold text-slate-600 uppercase">
+                            Cerro Negro Handover v2.1 | Conectado a Firestore
+                        </div>
+                    </footer>
                 </div>
             `;
         };
