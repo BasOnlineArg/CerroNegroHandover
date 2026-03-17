@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required) - User's unique ID
+    //   - email: string (required) - User's email address
+    //   - displayName: string (optional) - User's display name
+    //   - role: string (required, enum: ['admin', 'user']) - User's role
+    //   - createdAt: timestamp (optional) - Registration timestamp
+    //
+    // Collection: handovers
+    // Document ID: handoverId (UUID/Auto-generated)
+    // Fields:
+    //   - id: string (required) - Unique ID
+    //   - timestamp: string (required) - Creation time string
+    //   - shiftDate: string (required) - Shift date string (YYYY-MM-DD)
+    //   - weekOfYear: int (required) - ISO week number
+    //   - fleet: string (required) - Sector/Fleet name
+    //   - ots: list (required) - List of WorkOrder maps
+    //   - notifications: list (required) - List of Notification maps
+    //   - generalNotes: string (optional) - Notes
+    //   - author: string (required) - Author name
+    //   - frmRisks: list (required) - List of FRM risk IDs
+    //   - uid: string (required) - Creator's UID
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email == "spalmatw@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isSupervisor() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'supervisor';
+    }
+
+    function getUserRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role 
+        : 'guest';
+    }
+
+    function canReadFleet(fleet) {
+      let isDefaultAdmin = request.auth.token.email == "spalmatw@gmail.com" && request.auth.token.email_verified == true;
+      let userExists = exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      
+      return isAuthenticated() && (
+        isDefaultAdmin || (
+          userExists && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'supervisor' ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'estructural' && fleet == 'Estructural') ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'inspector estructural' && fleet == 'Estructural') ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'electrico' && fleet == 'Electrico') ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'perfo' && fleet == 'Perforadoras') ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'pyc' && fleet == 'Palas y Camiones') ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'multiflota' && fleet == 'Multiflota') ||
+            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gomeria' && fleet == 'Gomeria')
+          )
+        )
+      );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    function hasOnlyAllowedFields(allowedFields) {
+      return request.resource.data.keys().hasOnly(allowedFields);
+    }
+
+    function hasRequiredFields(requiredFields) {
+      return request.resource.data.keys().hasAll(requiredFields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
+             hasRequiredFields(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'supervisor', 'estructural', 'inspector estructural', 'electrico', 'perfo', 'pyc', 'multiflota', 'gomeria'] &&
+             data.email.size() < 256;
+    }
+
+    function isValidHandover(data) {
+      return hasOnlyAllowedFields(['id', 'timestamp', 'shiftDate', 'weekOfYear', 'fleet', 'ots', 'notifications', 'generalNotes', 'author', 'frmRisks', 'uid']) &&
+             hasRequiredFields(['id', 'timestamp', 'shiftDate', 'weekOfYear', 'fleet', 'author', 'uid']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.timestamp is string && data.timestamp.size() < 50 &&
+             isValidDateString(data.shiftDate) &&
+             data.weekOfYear is int && data.weekOfYear >= 1 && data.weekOfYear <= 53 &&
+             data.fleet is string && data.fleet.size() < 100 &&
+             data.author is string && data.author.size() < 100 &&
+             data.uid == request.auth.uid &&
+             data.ots is list && data.ots.size() <= 100 &&
+             data.notifications is list && data.notifications.size() <= 100 &&
+             data.frmRisks is list && data.frmRisks.size() <= 20 &&
+             (!('generalNotes' in data) || (data.generalNotes is string && data.generalNotes.size() < 5000));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      
+      // Only admins can create/update users manually (for the whitelist)
+      // But we also allow users to create their own profile on first login if they are in the whitelist
+      // Actually, the user wants the admin to manage users.
+      allow create, update: if isAdmin() || (isOwner(userId) && isAuthenticated());
+      allow delete: if isAdmin();
+    }
+
+    match /handovers/{handoverId} {
+      // Read access based on role and fleet
+      allow read: if isAuthenticated() && canReadFleet(resource.data.fleet);
+      
+      // Create access: must have role that matches the fleet
+      allow create: if isAuthenticated() && isValidHandover(request.resource.data) && canReadFleet(request.resource.data.fleet);
+      
+      // Update/Delete: only author or admin
+      allow update: if isAuthenticated() && isValidHandover(request.resource.data) && 
+                    (request.auth.uid == resource.data.uid || isAdmin()) && canReadFleet(request.resource.data.fleet);
+      
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.uid || isAdmin());
+    }
+
+    match /logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // Anyone can log their actions
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

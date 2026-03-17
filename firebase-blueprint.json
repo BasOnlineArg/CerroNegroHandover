@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "HandoverEntry": {
+      "title": "HandoverEntry",
+      "description": "Registro de pase de novedades de turno minero",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único del registro" },
+        "timestamp": { "type": "string", "description": "Fecha y hora de creación" },
+        "shiftDate": { "type": "string", "description": "Fecha efectiva del turno" },
+        "weekOfYear": { "type": "integer", "description": "Semana del año ISO" },
+        "fleet": { "type": "string", "description": "Tipo de flota/sector" },
+        "ots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "otNumber": { "type": "string" },
+              "description": { "type": "string" },
+              "bkls": { "type": "string" },
+              "isClosed": { "type": "boolean" }
+            }
+          }
+        },
+        "notifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "avisoNumber": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "generalNotes": { "type": "string" },
+        "author": { "type": "string" },
+        "frmRisks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "uid": { "type": "string", "description": "UID del usuario que creó el registro" }
+      },
+      "required": ["id", "timestamp", "shiftDate", "weekOfYear", "fleet", "author", "uid"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Perfil de usuario del sistema",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "supervisor", "estructural", "inspector estructural", "electrico", "perfo", "pyc", "multiflota", "gomeria"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "ActionLog": {
+      "title": "ActionLog",
+      "description": "Registro de acciones del sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "userId", "action"]
+    }
+  },
+  "firestore": {
+    "/handovers/{handoverId}": {
+      "schema": "HandoverEntry",
+      "description": "Colección de pases de novedades"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Colección de perfiles de usuario"
+    },
+    "/logs/{logId}": {
+      "schema": "ActionLog",
+      "description": "Colección de logs de auditoría"
+    }
+  }
+}
