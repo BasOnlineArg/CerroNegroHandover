@@ -46,19 +46,21 @@ const App: React.FC = () => {
               if (firstAllowed) setActiveFleet(firstAllowed);
             }
           } else {
-            // This case should be handled by the login logic for whitelisted users
-            // But if they somehow get here (e.g. Google login), we might need a default
-            // For this app, we strictly follow the whitelist.
-            if (currentUser.email === 'spalmatw@gmail.com') {
-               const adminProfile: UserProfile = {
+            // Check whitelist in Firestore
+            const whitelistDoc = await getDoc(doc(db, 'whitelist', currentUser.email?.toLowerCase() || ''));
+            const whitelistEntry = whitelistDoc.exists() ? whitelistDoc.data() : INITIAL_WHITELIST.find(w => w.email.toLowerCase() === currentUser.email?.toLowerCase());
+
+            if (currentUser.email === 'spalmatw@gmail.com' || whitelistEntry) {
+               const role = whitelistEntry ? whitelistEntry.role : UserRole.ADMIN;
+               const profile: UserProfile = {
                  uid: currentUser.uid,
                  email: currentUser.email!,
-                 displayName: currentUser.displayName || 'Admin',
-                 role: UserRole.ADMIN,
+                 displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuario',
+                 role: role,
                  createdAt: serverTimestamp()
                };
-               await setDoc(userDocRef, adminProfile);
-               setUserProfile(adminProfile);
+               await setDoc(userDocRef, profile);
+               setUserProfile(profile);
             } else {
                // Not in whitelist and no profile? Logout.
                await logout();
@@ -134,7 +136,17 @@ const App: React.FC = () => {
     setLoginError(null);
     setIsLoggingIn(true);
 
-    const whitelistEntry = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === loginEmail.toLowerCase());
+    let whitelistEntry = null;
+    try {
+      const whitelistDoc = await getDoc(doc(db, 'whitelist', loginEmail.toLowerCase()));
+      if (whitelistDoc.exists()) {
+        whitelistEntry = whitelistDoc.data();
+      } else {
+        whitelistEntry = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === loginEmail.toLowerCase());
+      }
+    } catch (error) {
+      whitelistEntry = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === loginEmail.toLowerCase());
+    }
     
     if (!whitelistEntry) {
       setLoginError("Usuario no autorizado en la lista blanca.");
@@ -193,6 +205,20 @@ const App: React.FC = () => {
       } else {
         setLoginError("Error al iniciar sesión: " + error.message);
       }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      const { signInWithGoogle } = await import('./firebase');
+      await signInWithGoogle();
+    } catch (error: any) {
+      console.error("Google Login error:", error);
+      setLoginError("Error al iniciar sesión con Google: " + error.message);
     } finally {
       setIsLoggingIn(false);
     }
@@ -336,6 +362,15 @@ const App: React.FC = () => {
               ) : (
                 <>Ingresar con Credenciales</>
               )}
+            </button>
+
+            <button 
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isLoggingIn}
+              className="w-full bg-white text-slate-700 py-4 rounded-2xl font-black uppercase text-xs hover:bg-slate-50 transition-all flex items-center justify-center gap-3 border-2 border-slate-100 shadow-sm active:scale-95 disabled:opacity-50"
+            >
+              <i className="fa-brands fa-google text-red-500"></i> Acceso Superusuario
             </button>
 
             <div className="relative my-6">

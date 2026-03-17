@@ -160,6 +160,11 @@ service cloud.firestore {
       allow create: if isAuthenticated(); // Anyone can log their actions
     }
 
+    match /whitelist/{email} {
+      allow read: if true; // Needed for login check before auth
+      allow write: if isAdmin();
+    }
+
     // Default deny
     match /{path=**} {
       allow read, write: if false;

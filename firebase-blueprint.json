@@ -70,6 +70,17 @@
         "details": { "type": "string" }
       },
       "required": ["id", "timestamp", "userId", "action"]
+    },
+    "WhitelistEntry": {
+      "title": "WhitelistEntry",
+      "description": "Usuario autorizado en el sistema",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "pass": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["email", "pass", "role"]
     }
   },
   "firestore": {
@@ -84,6 +95,10 @@
     "/logs/{logId}": {
       "schema": "ActionLog",
       "description": "Colección de logs de auditoría"
+    },
+    "/whitelist/{email}": {
+      "schema": "WhitelistEntry",
+      "description": "Colección de usuarios autorizados"
     }
   }
 }
