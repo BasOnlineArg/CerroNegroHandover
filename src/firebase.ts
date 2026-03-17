@@ -11,12 +11,12 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  apiKey: "AIzaSyAQ6T86zJOAsj_VFvJx1oec0W8rpGjnAg8",
+  authDomain: "gen-lang-client-0731441501.firebaseapp.com",
+  projectId: "gen-lang-client-0731441501",
+  storageBucket: "gen-lang-client-0731441501.firebasestorage.app",
+  messagingSenderId: "548575147749",
+  appId: "1:548575147749:web:bf985d98e9ed9255eb460c"
 };
 
 // Auth Helpers
