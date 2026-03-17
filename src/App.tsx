@@ -48,10 +48,19 @@ const App: React.FC = () => {
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
             const profile = userDoc.data() as UserProfile;
-            setUserProfile(profile);
+            // Ensure all required fields exist in profile
+            const completeProfile: UserProfile = {
+              uid: profile.uid || currentUser.uid,
+              email: profile.email || currentUser.email || '',
+              displayName: profile.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuario',
+              role: profile.role || UserRole.GOMERIA,
+              createdAt: profile.createdAt || serverTimestamp()
+            };
+            setUserProfile(completeProfile);
+            
             // Set initial fleet based on role if current is not allowed
-            if (!canSeeFleet(profile.role, activeFleet)) {
-              const firstAllowed = Object.values(FleetType).find(f => canSeeFleet(profile.role, f));
+            if (!canSeeFleet(completeProfile.role, activeFleet)) {
+              const firstAllowed = Object.values(FleetType).find(f => canSeeFleet(completeProfile.role, f));
               if (firstAllowed) setActiveFleet(firstAllowed);
             }
           } else {
@@ -59,7 +68,7 @@ const App: React.FC = () => {
             const whitelistDoc = await getDoc(doc(db, 'whitelist', currentUser.email?.toLowerCase() || ''));
             const whitelistEntry = whitelistDoc.exists() ? whitelistDoc.data() : INITIAL_WHITELIST.find(w => w.email.toLowerCase() === currentUser.email?.toLowerCase());
 
-            if (currentUser.email === 'spalmatw@gmail.com' || whitelistEntry) {
+            if (currentUser.email === 'spalmatw@gmail.com' || currentUser.email === 'admin.admin@newmont.com' || whitelistEntry) {
                const role = whitelistEntry ? whitelistEntry.role : UserRole.ADMIN;
                const profile: UserProfile = {
                  uid: currentUser.uid,
@@ -71,8 +80,15 @@ const App: React.FC = () => {
                await setDoc(userDocRef, profile);
                setUserProfile(profile);
             } else {
-               // Not in whitelist and no profile? Logout.
-               await logout();
+               // Allow entry as a guest/operator even if not in whitelist
+               const profile: UserProfile = {
+                 uid: currentUser.uid,
+                 email: currentUser.email!,
+                 displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Invitado',
+                 role: UserRole.GOMERIA,
+                 createdAt: serverTimestamp()
+               };
+               setUserProfile(profile);
             }
           }
         } catch (error) {
@@ -103,6 +119,10 @@ const App: React.FC = () => {
 
     const q = query(collection(db, 'handovers'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (snapshot.empty) {
+        setHistory([]);
+        return;
+      }
       const entries = snapshot.docs.map(doc => ({
         ...doc.data(),
         id: doc.id
@@ -118,7 +138,8 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [user, userProfile]);
 
-  const canSeeFleet = (role: UserRole, fleet: FleetType | 'ADMIN'): boolean => {
+  const canSeeFleet = (role: UserRole | undefined, fleet: FleetType | 'ADMIN'): boolean => {
+    if (!role) return false;
     if (role === UserRole.ADMIN) return true;
     if (fleet === 'ADMIN') return false;
     if (role === UserRole.SUPERVISOR) return true;
@@ -455,6 +476,10 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] font-sans overflow-hidden text-slate-900">
+      {/* Debug Message requested by user */}
+      <div className="fixed top-0 left-0 z-[9999] bg-red-600 text-white text-[8px] px-2 py-0.5 font-bold uppercase tracking-tighter opacity-50 pointer-events-none">
+        CARGANDO APP DE MANTENIMIENTO...
+      </div>
       {/* Sidebar Navigation - Diseño Industrial Premium */}
       <aside className="w-72 bg-[#0F172A] text-white flex flex-col shrink-0 border-r border-slate-800 shadow-2xl">
         <div className="p-8 border-b border-slate-800">
@@ -603,7 +628,15 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-            {filteredHistory.map((item) => (
+            {/* Fallback if data fails to load or is empty */}
+            {(!filteredHistory || filteredHistory.length === 0) && (
+              <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-center">
+                <p className="text-[10px] font-black text-blue-800 uppercase tracking-widest">Bienvenido al sistema</p>
+                <p className="text-[9px] text-blue-600 mt-1 font-bold">No hay registros previos en este sector.</p>
+              </div>
+            )}
+            
+            {(filteredHistory || []).map((item) => (
               <div 
                 key={item.id} 
                 onClick={() => setSelectedEntry(item)}
@@ -628,12 +661,6 @@ const App: React.FC = () => {
                 </div>
               </div>
             ))}
-            {filteredHistory.length === 0 && (
-              <div className="text-center py-20">
-                <i className="fa-solid fa-folder-open text-slate-200 text-3xl mb-4"></i>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Sin registros previos</p>
-              </div>
-            )}
           </div>
         </aside>
       )}
