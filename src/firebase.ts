@@ -2,14 +2,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const googleProvider = new GoogleAuthProvider();
-
 const firebaseConfig = {
   apiKey: "AIzaSyAQ6T86zJOAsj_VFvJx1oec0W8rpGjnAg8",
   authDomain: "gen-lang-client-0731441501.firebaseapp.com",
@@ -18,6 +10,12 @@ const firebaseConfig = {
   messagingSenderId: "548575147749",
   appId: "1:548575147749:web:bf985d98e9ed9255eb460c"
 };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const googleProvider = new GoogleAuthProvider();
 
 // Auth Helpers
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
