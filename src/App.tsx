@@ -22,8 +22,17 @@ const App: React.FC = () => {
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
 
   useEffect(() => {
+    // Timeout de 5 segundos para la carga inicial
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoadingTimeout(true);
+        console.warn("Auth timeout reached. Enabling manual login.");
+      }
+    }, 5000);
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
@@ -75,7 +84,10 @@ const App: React.FC = () => {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -293,12 +305,43 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading && !loadingTimeout) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-slate-900">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Cargando Sistema...</p>
+          <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Autenticando Sistema...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading && loadingTimeout) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-slate-900 p-6">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="w-16 h-16 bg-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <i className="fa-solid fa-clock-rotate-left text-amber-500 text-2xl"></i>
+          </div>
+          <h2 className="text-white text-xl font-bold">La conexión está tardando</h2>
+          <p className="text-slate-400 text-sm">No pudimos verificar tu sesión automáticamente. Puedes intentar ingresar manualmente o usar el modo invitado.</p>
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={() => setLoading(false)}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-900/20"
+            >
+              Ir al Login Manual
+            </button>
+            <button 
+              onClick={() => {
+                setIsDemo(true);
+                setLoading(false);
+              }}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition"
+            >
+              Entrar como Invitado (Modo Demo)
+            </button>
+          </div>
         </div>
       </div>
     );
