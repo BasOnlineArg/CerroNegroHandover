@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Minería-Handover: Gestión de Pases de Novedades para firebase",
+  "description": "Plataforma profesional para la gestión de pases de novedades en yacimientos mineros, con enfoque en análisis estructural y estándares internacionales (ISO/ANSI/ASME).",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
