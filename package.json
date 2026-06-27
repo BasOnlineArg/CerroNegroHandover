@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "setup:appwrite": "node scripts/setup-appwrite.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.42.0",
-    "firebase": "^12.10.0",
+    "appwrite": "^16.0.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "xlsx": "0.18.5"
@@ -20,6 +21,7 @@
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "node-appwrite": "^15.0.0",
     "tailwindcss": "^4.2.1",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

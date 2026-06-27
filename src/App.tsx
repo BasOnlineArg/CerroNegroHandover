@@ -1,20 +1,39 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FleetType, HandoverEntry, UserRole, UserProfile } from './types';
 import { HandoverForm } from './components/HandoverForm';
 import { KPISection } from './components/KPISection';
 import { HistoryDetails } from './components/HistoryDetails';
 import { AdminPanel } from './components/AdminPanel';
-import { auth, db, signInWithEmail, registerWithEmail, logout, handleFirestoreError, OperationType } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, onSnapshot, query, orderBy, setDoc, doc, getDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import {
+  account, databases, client,
+  logout, signInWithGoogle,
+  DATABASE_ID, COLLECTIONS, ID, Query,
+  AppwriteUser
+} from './appwrite';
 import { INITIAL_WHITELIST } from './constants/whitelist';
+
+type AnyUser = AppwriteUser | { $id: string; email: string; name: string };
+
+const docToHandoverEntry = (doc: any): HandoverEntry => ({
+  id: doc.$id,
+  timestamp: doc.timestamp || doc.$createdAt,
+  shiftDate: doc.shiftDate,
+  weekOfYear: doc.weekOfYear,
+  fleet: doc.fleet as FleetType,
+  ots: typeof doc.ots === 'string' ? JSON.parse(doc.ots || '[]') : (doc.ots ?? []),
+  notifications: typeof doc.notifications === 'string' ? JSON.parse(doc.notifications || '[]') : (doc.notifications ?? []),
+  generalNotes: doc.generalNotes || '',
+  author: doc.author,
+  frmRisks: doc.frmRisks ?? [],
+  uid: doc.uid,
+});
 
 const App: React.FC = () => {
   const [activeFleet, setActiveFleet] = useState<FleetType | 'ADMIN'>(FleetType.STRUCTURAL);
   const [history, setHistory] = useState<HandoverEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<HandoverEntry | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AnyUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -24,127 +43,12 @@ const App: React.FC = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
 
-  useEffect(() => {
-    // Timeout de 5 segundos para la carga inicial
-    const timer = setTimeout(() => {
-      if (loading) {
-        setLoadingTimeout(true);
-        console.warn("Auth timeout reached. Enabling manual login.");
-      }
-    }, 5000);
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      
-      if (currentUser) {
-        // Skip Firestore if we are in a demo state or if user is mock
-        if (currentUser.uid === 'demo-user-id' || isDemo) {
-          setLoading(false);
-          return;
-        }
-
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        try {
-          const userDoc = await getDoc(userDocRef);
-          if (userDoc.exists()) {
-            const profile = userDoc.data() as UserProfile;
-            // Ensure all required fields exist in profile
-            const completeProfile: UserProfile = {
-              uid: profile.uid || currentUser.uid,
-              email: profile.email || currentUser.email || '',
-              displayName: profile.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuario',
-              role: profile.role || UserRole.GOMERIA,
-              createdAt: profile.createdAt || serverTimestamp()
-            };
-            setUserProfile(completeProfile);
-            
-            // Set initial fleet based on role if current is not allowed
-            if (!canSeeFleet(completeProfile.role, activeFleet)) {
-              const firstAllowed = Object.values(FleetType).find(f => canSeeFleet(completeProfile.role, f));
-              if (firstAllowed) setActiveFleet(firstAllowed);
-            }
-          } else {
-            // Check whitelist in Firestore
-            const whitelistDoc = await getDoc(doc(db, 'whitelist', currentUser.email?.toLowerCase() || ''));
-            const whitelistEntry = whitelistDoc.exists() ? whitelistDoc.data() : INITIAL_WHITELIST.find(w => w.email.toLowerCase() === currentUser.email?.toLowerCase());
-
-            if (currentUser.email === 'spalmatw@gmail.com' || currentUser.email === 'admin.admin@newmont.com' || whitelistEntry) {
-               const role = whitelistEntry ? whitelistEntry.role : UserRole.ADMIN;
-               const profile: UserProfile = {
-                 uid: currentUser.uid,
-                 email: currentUser.email!,
-                 displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuario',
-                 role: role,
-                 createdAt: serverTimestamp()
-               };
-               await setDoc(userDocRef, profile);
-               setUserProfile(profile);
-            } else {
-               // Allow entry as a guest/operator even if not in whitelist
-               const profile: UserProfile = {
-                 uid: currentUser.uid,
-                 email: currentUser.email!,
-                 displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Invitado',
-                 role: UserRole.GOMERIA,
-                 createdAt: serverTimestamp()
-               };
-               setUserProfile(profile);
-            }
-          }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-        }
-      } else {
-        setUserProfile(null);
-      }
-      setLoading(false);
-    });
-
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isDemo || !user || !userProfile) {
-      setHistory([]);
-      return;
-    }
-
-    // Double check that we have a real UID and provider info if not demo
-    if (!isDemo && (!user.uid || user.uid === 'demo-user-id')) {
-      return;
-    }
-
-    const q = query(collection(db, 'handovers'), orderBy('timestamp', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        setHistory([]);
-        return;
-      }
-      const entries = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as HandoverEntry[];
-      
-      // Filter history based on what the user can see
-      const visibleEntries = entries.filter(e => canSeeFleet(userProfile.role, e.fleet));
-      setHistory(visibleEntries);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'handovers');
-    });
-
-    return () => unsubscribe();
-  }, [user, userProfile]);
-
   const canSeeFleet = (role: UserRole | undefined, fleet: FleetType | 'ADMIN'): boolean => {
     if (!role) return false;
     if (role === UserRole.ADMIN) return true;
     if (fleet === 'ADMIN') return false;
     if (role === UserRole.SUPERVISOR) return true;
     if (fleet === FleetType.RELIABILITY_KPIS) return true;
-
     switch (role) {
       case UserRole.ESTRUCTURAL:
       case UserRole.INSPECTOR_ESTRUCTURAL:
@@ -164,107 +68,188 @@ const App: React.FC = () => {
     }
   };
 
+  const resolveRoleFromWhitelist = async (email: string): Promise<UserRole> => {
+    const superAdmins = ['spalmatw@gmail.com', 'admin.admin@newmont.com'];
+    if (superAdmins.includes(email.toLowerCase())) return UserRole.ADMIN;
+
+    try {
+      const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.WHITELIST, [
+        Query.equal('email', email.toLowerCase())
+      ]);
+      if (result.documents.length > 0) return result.documents[0].role as UserRole;
+    } catch { /* fall through to local */ }
+
+    const local = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === email.toLowerCase());
+    return local ? local.role : UserRole.GOMERIA;
+  };
+
+  const loadUserProfile = useCallback(async (appwriteUser: AppwriteUser) => {
+    try {
+      const doc = await databases.getDocument(DATABASE_ID, COLLECTIONS.USERS, appwriteUser.$id);
+      const profile: UserProfile = {
+        uid: doc.$id,
+        email: doc.email,
+        displayName: doc.displayName || appwriteUser.name || appwriteUser.email.split('@')[0],
+        role: doc.role as UserRole,
+        createdAt: doc.createdAt || doc.$createdAt,
+      };
+      setUserProfile(profile);
+      if (!canSeeFleet(profile.role, activeFleet as FleetType)) {
+        const first = Object.values(FleetType).find(f => canSeeFleet(profile.role, f));
+        if (first) setActiveFleet(first);
+      }
+    } catch {
+      // Profile doesn't exist yet — create it
+      const role = await resolveRoleFromWhitelist(appwriteUser.email);
+      const profile: UserProfile = {
+        uid: appwriteUser.$id,
+        email: appwriteUser.email,
+        displayName: appwriteUser.name || appwriteUser.email.split('@')[0],
+        role,
+        createdAt: new Date().toISOString(),
+      };
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.USERS, appwriteUser.$id, profile);
+      } catch (e: any) {
+        if (e.code !== 409) console.error('Profile create error:', e);
+      }
+      setUserProfile(profile);
+    }
+  }, [activeFleet]);
+
+  // Auth state check on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoadingTimeout(true);
+        console.warn('Auth timeout.');
+      }
+    }, 5000);
+
+    account.get()
+      .then(async (appwriteUser) => {
+        setUser(appwriteUser);
+        await loadUserProfile(appwriteUser);
+        setLoading(false);
+      })
+      .catch(() => {
+        setUser(null);
+        setUserProfile(null);
+        setLoading(false);
+      });
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Handover data: initial load + realtime
+  const loadHandovers = useCallback(async (profile: UserProfile) => {
+    try {
+      const result = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.HANDOVERS,
+        [Query.orderDesc('$createdAt'), Query.limit(500)]
+      );
+      const entries = result.documents.map(docToHandoverEntry);
+      setHistory(entries.filter(e => canSeeFleet(profile.role, e.fleet)));
+    } catch (error) {
+      console.error('Error loading handovers:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDemo || !user || !userProfile) {
+      setHistory([]);
+      return;
+    }
+
+    loadHandovers(userProfile);
+
+    const channel = `databases.${DATABASE_ID}.collections.${COLLECTIONS.HANDOVERS}.documents`;
+    const unsubscribe = client.subscribe(channel, () => {
+      loadHandovers(userProfile);
+    });
+
+    return () => { unsubscribe(); };
+  }, [user, userProfile, isDemo]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
     setIsLoggingIn(true);
 
-    let whitelistEntry = null;
+    // Check whitelist
+    let whitelistEntry: { email: string; pass: string; role: UserRole } | undefined;
     try {
-      const whitelistDoc = await getDoc(doc(db, 'whitelist', loginEmail.toLowerCase()));
-      if (whitelistDoc.exists()) {
-        whitelistEntry = whitelistDoc.data();
-      } else {
-        whitelistEntry = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === loginEmail.toLowerCase());
+      const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.WHITELIST, [
+        Query.equal('email', loginEmail.toLowerCase())
+      ]);
+      if (result.documents.length > 0) {
+        whitelistEntry = result.documents[0] as any;
       }
-    } catch (error) {
+    } catch { /* fall through */ }
+
+    if (!whitelistEntry) {
       whitelistEntry = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === loginEmail.toLowerCase());
     }
-    
+
     if (!whitelistEntry) {
-      setLoginError("Usuario no autorizado en la lista blanca.");
+      setLoginError('Usuario no autorizado en la lista blanca.');
       setIsLoggingIn(false);
       return;
     }
 
     if (whitelistEntry.pass !== loginPass) {
-      setLoginError("Contraseña incorrecta.");
+      setLoginError('Contraseña incorrecta.');
       setIsLoggingIn(false);
       return;
     }
 
     try {
-      // Try to sign in
-      let userCredential;
+      // Try to create Appwrite user (409 = already exists, OK)
       try {
-        userCredential = await signInWithEmail(loginEmail, loginPass);
+        await account.create(ID.unique(), loginEmail, loginPass);
       } catch (err: any) {
-        // If user doesn't exist in Firebase Auth, create them
-        if (err.code === 'auth/user-not-found') {
-          userCredential = await registerWithEmail(loginEmail, loginPass);
-        } else {
-          throw err;
-        }
+        if (err.code !== 409) throw err;
       }
 
-      const loggedUser = userCredential.user;
-      
-      // Ensure profile exists with the correct role from whitelist
-      const userDocRef = doc(db, 'users', loggedUser.uid);
-      const userDoc = await getDoc(userDocRef);
-      
-      if (!userDoc.exists()) {
-        await setDoc(userDocRef, {
-          uid: loggedUser.uid,
-          email: loggedUser.email,
-          displayName: loggedUser.email?.split('@')[0],
-          role: whitelistEntry.role,
-          createdAt: serverTimestamp()
+      await account.createEmailPasswordSession(loginEmail, loginPass);
+      const appwriteUser = await account.get();
+      setUser(appwriteUser);
+      await loadUserProfile(appwriteUser);
+
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.LOGS, ID.unique(), {
+          timestamp: new Date().toISOString(),
+          userId: appwriteUser.$id,
+          userEmail: appwriteUser.email,
+          action: 'LOGIN',
+          details: `Usuario ${appwriteUser.email} inició sesión.`
         });
-      }
-
-      await addDoc(collection(db, 'logs'), {
-        timestamp: serverTimestamp(),
-        userId: loggedUser.uid,
-        userEmail: loggedUser.email,
-        action: 'LOGIN',
-        details: `Usuario ${loggedUser.email} inició sesión.`
-      });
+      } catch { /* log failures are non-fatal */ }
 
     } catch (error: any) {
-      console.error("Login error:", error);
-      if (error.code === 'auth/operation-not-allowed') {
-        setLoginError("ERROR: El método 'Correo/Contraseña' no está habilitado en Firebase. Por favor, actívalo en la consola de Firebase (Authentication > Sign-in method).");
-      } else {
-        setLoginError("Error al iniciar sesión: " + error.message);
-      }
+      console.error('Login error:', error);
+      setLoginError('Error al iniciar sesión: ' + (error.message || 'Error desconocido'));
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = () => {
     setLoginError(null);
     setIsLoggingIn(true);
-    try {
-      const { signInWithGoogle } = await import('./firebase');
-      await signInWithGoogle();
-    } catch (error: any) {
-      console.error("Google Login error:", error);
-      setLoginError("Error al iniciar sesión con Google: " + error.message);
-    } finally {
-      setIsLoggingIn(false);
-    }
+    // Redirects the page — no async/await needed
+    signInWithGoogle();
   };
 
   const handleHandoverSubmit = async (entry: any) => {
     if (!user) return;
 
-    const id = crypto.randomUUID();
+    const id = ID.unique();
     const newEntry: HandoverEntry = {
       ...entry,
       id,
-      uid: user.uid,
+      uid: user.$id,
       timestamp: new Date().toISOString()
     };
 
@@ -274,24 +259,43 @@ const App: React.FC = () => {
     }
 
     try {
-      await setDoc(doc(db, 'handovers', id), newEntry);
-      
-      // Log the action
-      await addDoc(collection(db, 'logs'), {
-        timestamp: serverTimestamp(),
-        userId: user.uid,
-        userEmail: user.email,
-        action: 'CREATE_HANDOVER',
-        details: `Nuevo pase de turno creado para la flota ${entry.fleet}. ID: ${id}`
+      await databases.createDocument(DATABASE_ID, COLLECTIONS.HANDOVERS, id, {
+        shiftDate: entry.shiftDate,
+        weekOfYear: entry.weekOfYear,
+        fleet: entry.fleet,
+        author: entry.author,
+        generalNotes: entry.generalNotes || '',
+        ots: JSON.stringify(entry.ots ?? []),
+        notifications: JSON.stringify(entry.notifications ?? []),
+        frmRisks: entry.frmRisks ?? [],
+        uid: user.$id,
+        timestamp: new Date().toISOString(),
       });
+
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.LOGS, ID.unique(), {
+          timestamp: new Date().toISOString(),
+          userId: user.$id,
+          userEmail: user.email,
+          action: 'CREATE_HANDOVER',
+          details: `Nuevo pase de turno creado para la flota ${entry.fleet}. ID: ${id}`
+        });
+      } catch { /* non-fatal */ }
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `handovers/${id}`);
+      console.error('Error creating handover:', error);
     }
+  };
+
+  const handleLogout = async () => {
+    try { await logout(); } catch { /* ignore */ }
+    setUser(null);
+    setUserProfile(null);
+    setHistory([]);
   };
 
   const handleFleetChange = (fleet: FleetType | 'ADMIN') => {
     setActiveFleet(fleet);
-    setSelectedEntry(null); 
+    setSelectedEntry(null);
   };
 
   const filteredHistory = history.filter(item => item.fleet === activeFleet);
@@ -315,13 +319,8 @@ const App: React.FC = () => {
     try {
       const date = new Date(ts);
       if (isNaN(date.getTime())) return ts;
-      return date.toLocaleString('es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (e) {
+      return date.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch {
       return ts;
     }
   };
@@ -345,21 +344,12 @@ const App: React.FC = () => {
             <i className="fa-solid fa-clock-rotate-left text-amber-500 text-2xl"></i>
           </div>
           <h2 className="text-white text-xl font-bold">La conexión está tardando</h2>
-          <p className="text-slate-400 text-sm">No pudimos verificar tu sesión automáticamente. Puedes intentar ingresar manualmente o usar el modo invitado.</p>
+          <p className="text-slate-400 text-sm">No pudimos verificar tu sesión automáticamente.</p>
           <div className="flex flex-col gap-3">
-            <button 
-              onClick={() => setLoading(false)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-900/20"
-            >
+            <button onClick={() => setLoading(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-900/20">
               Ir al Login Manual
             </button>
-            <button 
-              onClick={() => {
-                setIsDemo(true);
-                setLoading(false);
-              }}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition"
-            >
+            <button onClick={() => { setIsDemo(true); setLoading(false); }} className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition">
               Entrar como Invitado (Modo Demo)
             </button>
           </div>
@@ -383,57 +373,34 @@ const App: React.FC = () => {
             <p className="text-slate-500 text-sm mb-4 text-center leading-relaxed">
               Ingrese sus credenciales autorizadas para acceder al sistema.
             </p>
-            
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Usuario (Email)</label>
-                <input 
-                  type="email" 
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
+                <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-0 transition"
-                  placeholder="ejemplo@newmont.com"
-                  required
-                />
+                  placeholder="ejemplo@newmont.com" required />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Contraseña</label>
-                <input 
-                  type="password" 
-                  value={loginPass}
-                  onChange={(e) => setLoginPass(e.target.value)}
+                <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)}
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-0 transition"
-                  placeholder="••••••••"
-                  required
-                />
+                  placeholder="••••••••" required />
               </div>
             </div>
 
             {loginError && (
               <div className="bg-red-50 text-red-600 p-4 rounded-xl text-xs font-bold border border-red-100 animate-shake">
-                <i className="fa-solid fa-circle-exclamation mr-2"></i>
-                {loginError}
+                <i className="fa-solid fa-circle-exclamation mr-2"></i>{loginError}
               </div>
             )}
 
-            <button 
-              type="submit"
-              disabled={isLoggingIn}
-              className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-xs hover:bg-blue-700 transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-900/20 active:scale-95 disabled:opacity-50"
-            >
-              {isLoggingIn ? (
-                <><i className="fa-solid fa-spinner fa-spin"></i> Verificando...</>
-              ) : (
-                <>Ingresar con Credenciales</>
-              )}
+            <button type="submit" disabled={isLoggingIn}
+              className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-xs hover:bg-blue-700 transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-900/20 active:scale-95 disabled:opacity-50">
+              {isLoggingIn ? <><i className="fa-solid fa-spinner fa-spin"></i> Verificando...</> : <>Ingresar con Credenciales</>}
             </button>
 
-            <button 
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={isLoggingIn}
-              className="w-full bg-white text-slate-700 py-4 rounded-2xl font-black uppercase text-xs hover:bg-slate-50 transition-all flex items-center justify-center gap-3 border-2 border-slate-100 shadow-sm active:scale-95 disabled:opacity-50"
-            >
+            <button type="button" onClick={handleGoogleLogin} disabled={isLoggingIn}
+              className="w-full bg-white text-slate-700 py-4 rounded-2xl font-black uppercase text-xs hover:bg-slate-50 transition-all flex items-center justify-center gap-3 border-2 border-slate-100 shadow-sm active:scale-95 disabled:opacity-50">
               <i className="fa-brands fa-google text-red-500"></i> Acceso Superusuario
             </button>
 
@@ -442,27 +409,11 @@ const App: React.FC = () => {
               <div className="relative flex justify-center text-[10px] uppercase font-black tracking-widest"><span className="bg-white px-4 text-slate-400">O probar el sistema</span></div>
             </div>
 
-            <button 
-              type="button"
-              onClick={() => {
-                // Mock a user for demo purposes
-                const demoUser = {
-                  uid: 'demo-user-id',
-                  email: 'demo@newmont.com',
-                  displayName: 'Usuario Demo'
-                };
-                setIsDemo(true);
-                setUser(demoUser as any);
-                setUserProfile({
-                  uid: demoUser.uid,
-                  email: demoUser.email,
-                  displayName: demoUser.displayName,
-                  role: UserRole.ADMIN,
-                  createdAt: new Date()
-                });
-              }}
-              className="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
-            >
+            <button type="button" onClick={() => {
+              setIsDemo(true);
+              setUser({ $id: 'demo-user-id', email: 'demo@newmont.com', name: 'Usuario Demo' });
+              setUserProfile({ uid: 'demo-user-id', email: 'demo@newmont.com', displayName: 'Usuario Demo', role: UserRole.ADMIN, createdAt: new Date() });
+            }} className="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all border border-slate-200">
               <i className="fa-solid fa-flask mr-2"></i> Modo Demo (Sin Base de Datos)
             </button>
           </form>
@@ -476,11 +427,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] font-sans overflow-hidden text-slate-900">
-      {/* Debug Message requested by user */}
-      <div className="fixed top-0 left-0 z-[9999] bg-red-600 text-white text-[8px] px-2 py-0.5 font-bold uppercase tracking-tighter opacity-50 pointer-events-none">
-        CARGANDO APP DE MANTENIMIENTO...
-      </div>
-      {/* Sidebar Navigation - Diseño Industrial Premium */}
       <aside className="w-72 bg-[#0F172A] text-white flex flex-col shrink-0 border-r border-slate-800 shadow-2xl">
         <div className="p-8 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -493,33 +439,26 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         <nav className="flex-1 mt-6 overflow-y-auto px-4 space-y-2">
           <div className="px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest">Sectores Operativos</div>
           {Object.values(FleetType).filter(f => f !== FleetType.RELIABILITY_KPIS && canSeeFleet(userProfile.role, f)).map((fleet) => (
-            <button
-              key={fleet}
-              onClick={() => handleFleetChange(fleet)}
+            <button key={fleet} onClick={() => handleFleetChange(fleet)}
               className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
                 activeFleet === fleet && !isKPIView && !isAdminView
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-              }`}
-            >
+              }`}>
               <i className={`fa-solid ${getFleetIcon(fleet)} w-5 text-center`}></i>
               <span className="text-xs font-bold">{fleet}</span>
             </button>
           ))}
-          
+
           <div className="pt-6 px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest border-t border-slate-800 mt-4">Analítica</div>
-          <button
-            onClick={() => handleFleetChange(FleetType.RELIABILITY_KPIS)}
+          <button onClick={() => handleFleetChange(FleetType.RELIABILITY_KPIS)}
             className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
-              isKPIView 
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
-              : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
+              isKPIView ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}>
             <i className="fa-solid fa-chart-pie w-5 text-center"></i>
             <span className="text-xs font-bold uppercase tracking-tight">Métricas Globales</span>
           </button>
@@ -527,54 +466,39 @@ const App: React.FC = () => {
           {userProfile.role === UserRole.ADMIN && (
             <>
               <div className="pt-6 px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest border-t border-slate-800 mt-4">Sistema</div>
-              <button
-                onClick={() => handleFleetChange('ADMIN')}
+              <button onClick={() => handleFleetChange('ADMIN')}
                 className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
-                  isAdminView 
-                  ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                }`}
-              >
+                  isAdminView ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}>
                 <i className="fa-solid fa-user-shield w-5 text-center"></i>
                 <span className="text-xs font-bold uppercase tracking-tight">Administración</span>
               </button>
             </>
           )}
         </nav>
-        
+
         <div className="p-6 border-t border-slate-800 bg-[#0c1222]">
-           <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3 opacity-60">
-                <i className="fa-solid fa-location-dot text-blue-500"></i>
-                <span className="text-[10px] font-bold uppercase tracking-widest">Santa Cruz, ARG</span>
-              </div>
-              <button 
-                onClick={logout}
-                className="text-slate-500 hover:text-red-400 transition"
-                title="Cerrar Sesión"
-              >
-                <i className="fa-solid fa-right-from-bracket text-xs"></i>
-              </button>
-           </div>
-           <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden border border-slate-600">
-                {user.photoURL ? (
-                  <img src={user.photoURL} alt={user.displayName || ''} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[10px] font-bold">
-                    {user.displayName?.charAt(0) || user.email?.charAt(0)}
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-black text-slate-200 truncate">{user.displayName}</p>
-                <p className="text-[8px] font-bold text-slate-500 truncate uppercase">{user.email}</p>
-              </div>
-           </div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3 opacity-60">
+              <i className="fa-solid fa-location-dot text-blue-500"></i>
+              <span className="text-[10px] font-bold uppercase tracking-widest">Santa Cruz, ARG</span>
+            </div>
+            <button onClick={handleLogout} className="text-slate-500 hover:text-red-400 transition" title="Cerrar Sesión">
+              <i className="fa-solid fa-right-from-bracket text-xs"></i>
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden border border-slate-600 flex items-center justify-center text-[10px] font-bold">
+              {user.name?.charAt(0) || user.email?.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black text-slate-200 truncate">{user.name}</p>
+              <p className="text-[8px] font-bold text-slate-500 truncate uppercase">{user.email}</p>
+            </div>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
         <header className="bg-white border-b px-10 py-5 flex justify-between items-center z-10 shrink-0 shadow-sm">
           <div>
@@ -606,44 +530,38 @@ const App: React.FC = () => {
               <HistoryDetails entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
             ) : (
               <div className="animate-in fade-in duration-500">
-                <HandoverForm fleet={activeFleet as FleetType} onSubmit={handleHandoverSubmit} history={history} currentUser={user} />
+                <HandoverForm
+                  fleet={activeFleet as FleetType}
+                  onSubmit={handleHandoverSubmit}
+                  history={history}
+                  currentUser={{ displayName: user.name, email: user.email }}
+                />
               </div>
             )}
           </div>
         </div>
       </main>
 
-      {/* History Sidebar */}
       {!isKPIView && !isAdminView && (
         <aside className="w-80 bg-white border-l border-slate-200 flex flex-col h-full shrink-0 shadow-sm">
           <div className="p-6 border-b bg-white flex justify-between items-center">
             <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-[0.2em]">Historial Técnico</h3>
-            <button 
-              onClick={() => setSelectedEntry(null)}
-              className="p-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition"
-              title="Nuevo Pase"
-            >
+            <button onClick={() => setSelectedEntry(null)} className="p-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition" title="Nuevo Pase">
               <i className="fa-solid fa-plus text-[10px]"></i>
             </button>
           </div>
-          
           <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-            {/* Fallback if data fails to load or is empty */}
             {(!filteredHistory || filteredHistory.length === 0) && (
               <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-center">
                 <p className="text-[10px] font-black text-blue-800 uppercase tracking-widest">Bienvenido al sistema</p>
                 <p className="text-[9px] text-blue-600 mt-1 font-bold">No hay registros previos en este sector.</p>
               </div>
             )}
-            
             {(filteredHistory || []).map((item) => (
-              <div 
-                key={item.id} 
-                onClick={() => setSelectedEntry(item)}
+              <div key={item.id} onClick={() => setSelectedEntry(item)}
                 className={`bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition cursor-pointer group ${
                   selectedEntry?.id === item.id ? 'ring-2 ring-blue-500 border-transparent shadow-blue-100' : 'border-slate-200'
-                }`}
-              >
+                }`}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded uppercase">{formatTimestamp(item.timestamp)}</span>
                   <i className="fa-solid fa-chevron-right text-[10px] text-slate-300 group-hover:text-blue-500 transition"></i>
