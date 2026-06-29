@@ -1,8 +1,11 @@
 import { Client, Account, Databases, ID, Query, Models, OAuthProvider } from 'appwrite';
 
+const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://nyc.cloud.appwrite.io/v1';
+const APPWRITE_PROJECT  = import.meta.env.VITE_APPWRITE_PROJECT_ID || '6a3fc9620007a2238cc4';
+
 const client = new Client()
-  .setEndpoint(import.meta.env.VITE_APPWRITE_ENDPOINT ?? 'https://cloud.appwrite.io/v1')
-  .setProject(import.meta.env.VITE_APPWRITE_PROJECT_ID);
+  .setEndpoint(APPWRITE_ENDPOINT)
+  .setProject(APPWRITE_PROJECT);
 
 export const account = new Account(client);
 export const databases = new Databases(client);
@@ -10,7 +13,7 @@ export { client, ID, Query };
 
 export type AppwriteUser = Models.User<Models.Preferences>;
 
-export const DATABASE_ID: string = import.meta.env.VITE_APPWRITE_DATABASE_ID;
+export const DATABASE_ID: string = import.meta.env.VITE_APPWRITE_DATABASE_ID || 'handover-db';
 
 export const COLLECTIONS = {
   USERS: 'users',
