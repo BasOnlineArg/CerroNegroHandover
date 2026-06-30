@@ -2,6 +2,7 @@
 import React from 'react';
 import { FleetType, HandoverEntry } from '../types';
 
+
 interface KPIStats {
   otsGenerated: number;
   otsOpen: number;
@@ -82,7 +83,7 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
 
   const FleetDistribution = () => {
     const fleetData = Object.values(FleetType)
-      .filter(f => f !== FleetType.RELIABILITY_KPIS)
+      .filter(f => f !== FleetType.GLOBAL_KPIS)
       .map(f => ({
         name: f,
         count: entries.filter(e => e.fleet === f).reduce((acc, curr) => acc + curr.ots.length, 0)
@@ -92,13 +93,13 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
 
     return (
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mt-6">
-        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Distribución de OTs por Sector</h4>
+        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Distribución de Tareas por Equipo</h4>
         <div className="space-y-4">
           {fleetData.map(f => (
             <div key={f.name}>
               <div className="flex justify-between text-xs font-bold mb-1">
                 <span className="text-slate-600">{f.name}</span>
-                <span className="text-blue-600">{f.count} OTs</span>
+                <span className="text-blue-600">{f.count} Tareas</span>
               </div>
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                 <div 
@@ -147,18 +148,18 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
 
     return (
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mt-6 col-span-full">
-        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Métricas Detalladas por Usuario</h4>
+        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Métricas Detalladas por Responsable</h4>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100">
-                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Inspector</th>
+                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Responsable</th>
                 <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pases</th>
-                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">OTs Gen.</th>
-                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">OTs Abier.</th>
-                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">OTs Cerr.</th>
-                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Avisos</th>
-                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">BKLs</th>
+                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Tareas Gen.</th>
+                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pendientes</th>
+                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Cerradas</th>
+                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Novedades</th>
+                <th className="py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Bloqueos</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -203,47 +204,47 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard 
-          label="Pases Generados" 
-          value={stats.pasesGenerados} 
-          color="bg-slate-600" 
-          icon="fa-clipboard-list" 
+        <StatCard
+          label="Pases Generados"
+          value={stats.pasesGenerados}
+          color="bg-slate-600"
+          icon="fa-clipboard-list"
           tooltip="Total de pases de turno realizados."
         />
-        <StatCard 
-          label="OTs Generadas" 
-          value={stats.otsGenerated} 
-          color="bg-blue-600" 
-          icon="fa-file-invoice" 
-          tooltip="Total acumulado de Órdenes de Trabajo registradas."
+        <StatCard
+          label="Tareas Registradas"
+          value={stats.otsGenerated}
+          color="bg-blue-600"
+          icon="fa-file-invoice"
+          tooltip="Total acumulado de tareas registradas en pases de turno."
         />
-        <StatCard 
-          label="OTs Abiertas" 
-          value={stats.otsOpen} 
-          color="bg-amber-500" 
-          icon="fa-folder-open" 
-          tooltip="OTs que aún requieren intervención técnica."
+        <StatCard
+          label="Tareas Pendientes"
+          value={stats.otsOpen}
+          color="bg-amber-500"
+          icon="fa-folder-open"
+          tooltip="Tareas que aún requieren atención o resolución."
         />
-        <StatCard 
-          label="OTs Cerradas" 
-          value={stats.otsClosed} 
-          color="bg-emerald-600" 
-          icon="fa-file-circle-check" 
-          tooltip="OTs que han sido completadas y cerradas."
+        <StatCard
+          label="Tareas Cerradas"
+          value={stats.otsClosed}
+          color="bg-emerald-600"
+          icon="fa-file-circle-check"
+          tooltip="Tareas completadas y cerradas exitosamente."
         />
-        <StatCard 
-          label="Avisos Generados" 
-          value={stats.avisosGenerated} 
-          color="bg-indigo-600" 
-          icon="fa-bell" 
-          tooltip="Notificaciones de anomalías detectadas."
+        <StatCard
+          label="Novedades"
+          value={stats.avisosGenerated}
+          color="bg-indigo-600"
+          icon="fa-bell"
+          tooltip="Novedades o alertas registradas en los turnos."
         />
-        <StatCard 
-          label="BKL Generados" 
-          value={stats.bklsGenerated} 
-          color="bg-rose-600" 
-          icon="fa-layer-group" 
-          tooltip="Backlogs detectados y categorizados."
+        <StatCard
+          label="Bloqueos"
+          value={stats.bklsGenerated}
+          color="bg-rose-600"
+          icon="fa-layer-group"
+          tooltip="Bloqueos o impedimentos detectados y registrados."
         />
       </div>
 

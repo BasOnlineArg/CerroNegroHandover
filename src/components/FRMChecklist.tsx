@@ -1,21 +1,21 @@
 
 import React from 'react';
-import { FRM_RISKS } from '../types';
+import { RISK_ITEMS } from '../types';
 
 interface Props {
   selectedRisks: string[];
   toggleRisk: (id: string) => void;
 }
 
-export const FRMChecklist: React.FC<Props> = ({ selectedRisks, toggleRisk }) => {
+export const RiskChecklist: React.FC<Props> = ({ selectedRisks, toggleRisk }) => {
   return (
     <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg shadow-sm">
       <h3 className="text-orange-800 font-bold mb-3 flex items-center">
         <i className="fa-solid fa-shield-halved mr-2"></i>
-        FATALITY RISK MANAGEMENT (FRM) - Control de Riesgos Críticos
+        Gestión de Riesgos Críticos — Control de Turno
       </h3>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        {FRM_RISKS.map((risk) => (
+        {RISK_ITEMS.map((risk) => (
           <button
             key={risk.id}
             onClick={() => toggleRisk(risk.id)}
@@ -35,3 +35,6 @@ export const FRMChecklist: React.FC<Props> = ({ selectedRisks, toggleRisk }) => 
     </div>
   );
 };
+
+// Backward-compat alias
+export const FRMChecklist = RiskChecklist;

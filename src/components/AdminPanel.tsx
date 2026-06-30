@@ -29,7 +29,7 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
 
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
-  const [newUserRole, setNewUserRole] = useState<UserRole>(UserRole.ESTRUCTURAL);
+  const [newUserRole, setNewUserRole] = useState<UserRole>(UserRole.OPERATOR);
   const [isAdding, setIsAdding] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -184,7 +184,7 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email</label>
             <input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)}
               className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-0 transition"
-              placeholder="usuario@newmont.com" required />
+              placeholder="usuario@empresa.com" required />
           </div>
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Clave</label>

@@ -30,7 +30,7 @@ const docToHandoverEntry = (doc: any): HandoverEntry => ({
 });
 
 const App: React.FC = () => {
-  const [activeFleet, setActiveFleet] = useState<FleetType | 'ADMIN'>(FleetType.STRUCTURAL);
+  const [activeFleet, setActiveFleet] = useState<FleetType | 'ADMIN'>(FleetType.OPERATIONS);
   const [history, setHistory] = useState<HandoverEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<HandoverEntry | null>(null);
   const [user, setUser] = useState<AnyUser | null>(null);
@@ -47,29 +47,26 @@ const App: React.FC = () => {
     if (!role) return false;
     if (role === UserRole.ADMIN) return true;
     if (fleet === 'ADMIN') return false;
-    if (role === UserRole.SUPERVISOR) return true;
-    if (fleet === FleetType.RELIABILITY_KPIS) return true;
+    if (role === UserRole.MANAGER || role === UserRole.SUPERVISOR) return true;
+    if (fleet === FleetType.GLOBAL_KPIS) return true;
     switch (role) {
-      case UserRole.ESTRUCTURAL:
-      case UserRole.INSPECTOR_ESTRUCTURAL:
-        return fleet === FleetType.STRUCTURAL;
-      case UserRole.ELECTRICO:
-        return fleet === FleetType.ELECTRICAL;
-      case UserRole.PERFO:
-        return fleet === FleetType.DRILLS;
-      case UserRole.PYC:
-        return fleet === FleetType.SHOVELS_TRUCKS;
-      case UserRole.MULTIFLOTA:
-        return fleet === FleetType.AUXILIARY;
-      case UserRole.GOMERIA:
-        return fleet === FleetType.GOMERIA;
+      case UserRole.OPERATOR:
+        return fleet === FleetType.OPERATIONS;
+      case UserRole.ANALYST:
+        return fleet === FleetType.ENGINEERING || fleet === FleetType.QUALITY;
+      case UserRole.TECHNICIAN:
+        return fleet === FleetType.MAINTENANCE;
+      case UserRole.VIEWER:
+        return fleet === FleetType.LOGISTICS;
+      case UserRole.SUPPORT_ROLE:
+        return fleet === FleetType.SUPPORT;
       default:
         return false;
     }
   };
 
   const resolveRoleFromWhitelist = async (email: string): Promise<UserRole> => {
-    const superAdmins = ['spalmatw@gmail.com', 'admin.admin@newmont.com'];
+    const superAdmins = ['spalmatw@gmail.com', 'admin@empresa.com'];
     if (superAdmins.includes(email.toLowerCase())) return UserRole.ADMIN;
 
     try {
@@ -80,7 +77,7 @@ const App: React.FC = () => {
     } catch { /* fall through to local */ }
 
     const local = INITIAL_WHITELIST.find(w => w.email.toLowerCase() === email.toLowerCase());
-    return local ? local.role : UserRole.GOMERIA;
+    return local ? local.role : UserRole.VIEWER;
   };
 
   const loadUserProfile = useCallback(async (appwriteUser: AppwriteUser) => {
@@ -164,7 +161,7 @@ const App: React.FC = () => {
 
     loadHandovers(userProfile);
 
-    const channel = `databases.${DATABASE_ID}.collections.${COLLECTIONS.HANDOVERS}.documents`;
+    const channel = `databases.${DATABASE_ID}.collections.${COLLECTIONS.HANDOVERS}.documents` as const;
     const unsubscribe = client.subscribe(channel, () => {
       loadHandovers(userProfile);
     });
@@ -299,18 +296,18 @@ const App: React.FC = () => {
   };
 
   const filteredHistory = history.filter(item => item.fleet === activeFleet);
-  const isKPIView = activeFleet === FleetType.RELIABILITY_KPIS;
+  const isKPIView = activeFleet === FleetType.GLOBAL_KPIS;
   const isAdminView = activeFleet === 'ADMIN';
 
   const getFleetIcon = (fleet: FleetType) => {
     switch (fleet) {
-      case FleetType.STRUCTURAL: return 'fa-gears';
-      case FleetType.ELECTRICAL: return 'fa-bolt';
-      case FleetType.DRILLS: return 'fa-bore-hole';
-      case FleetType.AUXILIARY: return 'fa-truck-pickup';
-      case FleetType.SHOVELS_TRUCKS: return 'fa-truck-monster';
-      case FleetType.GOMERIA: return 'fa-circle-dot';
-      case FleetType.RELIABILITY_KPIS: return 'fa-chart-line';
+      case FleetType.OPERATIONS:   return 'fa-gears';
+      case FleetType.ENGINEERING:  return 'fa-screwdriver-wrench';
+      case FleetType.MAINTENANCE:  return 'fa-toolbox';
+      case FleetType.QUALITY:      return 'fa-circle-check';
+      case FleetType.LOGISTICS:    return 'fa-truck';
+      case FleetType.SUPPORT:      return 'fa-headset';
+      case FleetType.GLOBAL_KPIS:  return 'fa-chart-line';
       default: return 'fa-folder';
     }
   };
@@ -364,9 +361,9 @@ const App: React.FC = () => {
         <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-500">
           <div className="p-10 text-center bg-slate-50 border-b">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-900/20 mx-auto mb-6">
-              <i className="fa-solid fa-mountain-sun text-white text-2xl"></i>
+              <i className="fa-solid fa-clipboard-list text-white text-2xl"></i>
             </div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight">Cerro Negro</h1>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">Handover</h1>
             <p className="text-[10px] mt-1 text-blue-600 font-bold uppercase tracking-[0.2em]">Gestión de Pases de Turno</p>
           </div>
           <form onSubmit={handleLogin} className="p-10 space-y-6">
@@ -378,7 +375,7 @@ const App: React.FC = () => {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Usuario (Email)</label>
                 <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-0 transition"
-                  placeholder="ejemplo@newmont.com" required />
+                  placeholder="ejemplo@empresa.com" required />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Contraseña</label>
@@ -411,14 +408,14 @@ const App: React.FC = () => {
 
             <button type="button" onClick={() => {
               setIsDemo(true);
-              setUser({ $id: 'demo-user-id', email: 'demo@newmont.com', name: 'Usuario Demo' });
-              setUserProfile({ uid: 'demo-user-id', email: 'demo@newmont.com', displayName: 'Usuario Demo', role: UserRole.ADMIN, createdAt: new Date() });
+              setUser({ $id: 'demo-user-id', email: 'demo@empresa.com', name: 'Usuario Demo' });
+              setUserProfile({ uid: 'demo-user-id', email: 'demo@empresa.com', displayName: 'Usuario Demo', role: UserRole.ADMIN, createdAt: new Date() });
             }} className="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all border border-slate-200">
               <i className="fa-solid fa-flask mr-2"></i> Modo Demo (Sin Base de Datos)
             </button>
           </form>
           <div className="p-6 bg-slate-50 text-center border-t">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estándares ISO 10816 / 18436-7</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sistema de Pases de Turno</p>
           </div>
         </div>
       </div>
@@ -431,18 +428,18 @@ const App: React.FC = () => {
         <div className="p-8 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/40">
-              <i className="fa-solid fa-mountain-sun text-white"></i>
+              <i className="fa-solid fa-clipboard-list text-white"></i>
             </div>
             <div>
-              <h1 className="text-sm font-black tracking-tighter uppercase leading-none">Cerro Negro</h1>
-              <p className="text-[9px] mt-1 text-blue-400 font-bold uppercase tracking-[0.2em]">Pase de Novedades</p>
+              <h1 className="text-sm font-black tracking-tighter uppercase leading-none">Handover</h1>
+              <p className="text-[9px] mt-1 text-blue-400 font-bold uppercase tracking-[0.2em]">Pase de Turno</p>
             </div>
           </div>
         </div>
 
         <nav className="flex-1 mt-6 overflow-y-auto px-4 space-y-2">
           <div className="px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest">Sectores Operativos</div>
-          {Object.values(FleetType).filter(f => f !== FleetType.RELIABILITY_KPIS && canSeeFleet(userProfile.role, f)).map((fleet) => (
+          {Object.values(FleetType).filter(f => f !== FleetType.GLOBAL_KPIS && canSeeFleet(userProfile.role, f)).map((fleet) => (
             <button key={fleet} onClick={() => handleFleetChange(fleet)}
               className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
                 activeFleet === fleet && !isKPIView && !isAdminView
@@ -455,7 +452,7 @@ const App: React.FC = () => {
           ))}
 
           <div className="pt-6 px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest border-t border-slate-800 mt-4">Analítica</div>
-          <button onClick={() => handleFleetChange(FleetType.RELIABILITY_KPIS)}
+          <button onClick={() => handleFleetChange(FleetType.GLOBAL_KPIS)}
             className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
               isKPIView ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}>
@@ -480,8 +477,8 @@ const App: React.FC = () => {
         <div className="p-6 border-t border-slate-800 bg-[#0c1222]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3 opacity-60">
-              <i className="fa-solid fa-location-dot text-blue-500"></i>
-              <span className="text-[10px] font-bold uppercase tracking-widest">Santa Cruz, ARG</span>
+              <i className="fa-solid fa-circle-dot text-blue-500"></i>
+              <span className="text-[10px] font-bold uppercase tracking-widest">En línea</span>
             </div>
             <button onClick={handleLogout} className="text-slate-500 hover:text-red-400 transition" title="Cerrar Sesión">
               <i className="fa-solid fa-right-from-bracket text-xs"></i>
@@ -504,18 +501,18 @@ const App: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gestión Técnica</h2>
+              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Área Activa</h2>
             </div>
             <p className="text-2xl font-black text-slate-800">{activeFleet}</p>
           </div>
           <div className="flex gap-4">
             <div className="text-right border-r pr-4 border-slate-200">
-              <p className="text-[10px] font-bold text-slate-400 uppercase">Estado General</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">Estado</p>
               <p className="text-xs font-black text-emerald-600 uppercase">Activo</p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-bold text-slate-400 uppercase">Ubicación</p>
-              <p className="text-xs font-black text-slate-800 uppercase">Yacimiento Principal</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">Sistema</p>
+              <p className="text-xs font-black text-slate-800 uppercase">Handover</p>
             </div>
           </div>
         </header>

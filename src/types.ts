@@ -1,24 +1,23 @@
 
 export enum FleetType {
-  STRUCTURAL = "Estructural",
-  ELECTRICAL = "Electrico",
-  DRILLS = "Perforadoras",
-  AUXILIARY = "Multiflota",
-  SHOVELS_TRUCKS = "Palas y Camiones",
-  GOMERIA = "Gomeria",
-  RELIABILITY_KPIS = "KPIs Confiabilidad"
+  OPERATIONS = "Operaciones",
+  ENGINEERING = "Ingeniería",
+  MAINTENANCE = "Mantenimiento",
+  QUALITY = "Control de Calidad",
+  LOGISTICS = "Logística",
+  SUPPORT = "Soporte",
+  GLOBAL_KPIS = "KPIs Globales"
 }
 
 export enum UserRole {
   ADMIN = "admin",
+  MANAGER = "manager",
   SUPERVISOR = "supervisor",
-  ESTRUCTURAL = "estructural",
-  INSPECTOR_ESTRUCTURAL = "inspector estructural",
-  ELECTRICO = "electrico",
-  PERFO = "perfo",
-  PYC = "pyc",
-  MULTIFLOTA = "multiflota",
-  GOMERIA = "gomeria"
+  OPERATOR = "operator",
+  ANALYST = "analyst",
+  TECHNICIAN = "technician",
+  VIEWER = "viewer",
+  SUPPORT_ROLE = "support"
 }
 
 export interface UserProfile {
@@ -52,44 +51,40 @@ export interface Notification {
   description: string;
 }
 
-export interface FRMRisk {
+export interface RiskItem {
   id: string;
   name: string;
   icon: string;
 }
 
-// Defining FRM risks as per Fatality Risk Management standards in mining
-export const FRM_RISKS: FRMRisk[] = [
-  { id: 'frm-1', name: 'Espacios Confinados', icon: 'fa-door-closed' },
-  { id: 'frm-2', name: 'Contacto Electricidad', icon: 'fa-bolt-lightning' },
-  { id: 'frm-3', name: 'Atrapamiento Equipos', icon: 'fa-gears' },
-  { id: 'frm-4', name: 'Caída en Altura', icon: 'fa-arrows-up-to-line' },
-  { id: 'frm-5', name: 'Inestabilidad Terreno', icon: 'fa-mountain-sun' },
-  { id: 'frm-6', name: 'Colisión Vehículos', icon: 'fa-car-burst' },
-  { id: 'frm-7', name: 'Vuelco de Vehículos', icon: 'fa-truck-field-unpaved' },
-  { id: 'frm-8', name: 'Grúas e Izaje', icon: 'fa-crane' },
-  { id: 'frm-9', name: 'Caída de Objetos', icon: 'fa-box-open' },
-  { id: 'frm-10', name: 'Vehículo al Vacío', icon: 'fa-arrow-trend-down' },
-  { id: 'frm-11', name: 'Incendio/Explosión', icon: 'fa-fire-flame-curved' },
-  { id: 'frm-12', name: 'Materiales Peligrosos', icon: 'fa-biohazard' },
-  { id: 'frm-13', name: 'Explosivos', icon: 'fa-bomb' },
-  { id: 'frm-14', name: 'Aviación', icon: 'fa-plane-departure' },
-  { id: 'frm-15', name: 'Gases y Polvos', icon: 'fa-mask-face' },
-  { id: 'frm-16', name: 'Caída al Agua', icon: 'fa-person-swimming' },
-  { id: 'frm-17', name: 'Excavaciones', icon: 'fa-shovels' },
-  { id: 'frm-18', name: 'Obras Temporales', icon: 'fa-trowel-bricks' }
+export const RISK_ITEMS: RiskItem[] = [
+  { id: 'risk-1',  name: 'Trabajo en Altura',     icon: 'fa-arrows-up-to-line' },
+  { id: 'risk-2',  name: 'Riesgo Eléctrico',       icon: 'fa-bolt-lightning' },
+  { id: 'risk-3',  name: 'Equipos y Maquinaria',   icon: 'fa-gears' },
+  { id: 'risk-4',  name: 'Incendio / Explosión',   icon: 'fa-fire-flame-curved' },
+  { id: 'risk-5',  name: 'Materiales Peligrosos',  icon: 'fa-biohazard' },
+  { id: 'risk-6',  name: 'Espacios Confinados',    icon: 'fa-door-closed' },
+  { id: 'risk-7',  name: 'Vehículos / Transporte', icon: 'fa-car-burst' },
+  { id: 'risk-8',  name: 'Carga y Descarga',       icon: 'fa-boxes-stacked' },
+  { id: 'risk-9',  name: 'Riesgo Químico',         icon: 'fa-flask' },
+  { id: 'risk-10', name: 'Trabajos en Caliente',   icon: 'fa-temperature-high' },
+  { id: 'risk-11', name: 'Caída de Objetos',       icon: 'fa-box-open' },
+  { id: 'risk-12', name: 'Izaje y Elevación',      icon: 'fa-crane' },
+  { id: 'risk-13', name: 'Ruido / Vibraciones',    icon: 'fa-wave-square' },
+  { id: 'risk-14', name: 'Ergonomía',              icon: 'fa-person-falling' },
+  { id: 'risk-15', name: 'Radiaciones',            icon: 'fa-radiation' },
 ];
 
 export interface HandoverEntry {
   id: string;
-  timestamp: string; // Fecha de creación del registro
-  shiftDate: string; // Fecha efectiva del cambio de turno
-  weekOfYear: number; // Semana del año (ISO)
+  timestamp: string;
+  shiftDate: string;
+  weekOfYear: number;
   fleet: FleetType;
   ots: WorkOrder[];
   notifications: Notification[];
   generalNotes: string;
   author: string;
-  frmRisks: string[]; // List of FRM risk IDs active during the shift
-  uid: string; // User ID of the creator
+  frmRisks: string[];
+  uid: string;
 }

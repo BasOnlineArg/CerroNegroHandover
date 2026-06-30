@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { HandoverEntry, FRM_RISKS } from '../types';
+import { HandoverEntry, RISK_ITEMS } from '../types';
 import { analyzeMaintenanceData } from '../services/geminiService';
 
 interface Props {
@@ -56,7 +56,7 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
                 <span className="bg-emerald-600/20 text-emerald-400 text-[9px] font-black px-3 py-1 rounded-full uppercase border border-emerald-500/30">Registro Cerrado</span>
               </div>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                {entry.shiftDate || 'Fecha no registrada'} | Sector {entry.fleet || 'N/A'} | {formatTimestamp(entry.timestamp)}
+                {entry.shiftDate || 'Fecha no registrada'} | Equipo: {entry.fleet || 'N/A'} | {formatTimestamp(entry.timestamp)}
               </p>
             </div>
           </div>
@@ -75,8 +75,8 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
               <div className="flex items-center gap-3">
                 <i className="fa-solid fa-microchip text-blue-400 text-xl"></i>
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em]">Asistente de Ingeniería IA</h3>
-                  <p className="text-[10px] text-blue-300 font-bold uppercase mt-1">Análisis bajo Normas ISO/ASME/ANSI</p>
+                  <h3 className="text-xs font-black uppercase tracking-[0.2em]">Asistente de Análisis IA</h3>
+                  <p className="text-[10px] text-blue-300 font-bold uppercase mt-1">Análisis inteligente del pase de turno</p>
                 </div>
               </div>
               <button 
@@ -105,11 +105,11 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
           {entry.frmRisks && entry.frmRisks.length > 0 && (
             <section>
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 flex items-center gap-3">
-                <i className="fa-solid fa-shield-halved text-orange-600"></i> Riesgos Críticos Controlados (FRM)
+                <i className="fa-solid fa-shield-halved text-orange-600"></i> Riesgos Críticos Identificados
               </h3>
               <div className="flex flex-wrap gap-3">
                 {entry.frmRisks.map(riskId => {
-                  const risk = FRM_RISKS.find(r => r.id === riskId);
+                  const risk = RISK_ITEMS.find(r => r.id === riskId);
                   return risk ? (
                     <div key={riskId} className="bg-orange-100 text-orange-800 px-3 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 border border-orange-200 shadow-sm">
                       <i className={`fa-solid ${risk.icon} text-orange-600`}></i> {risk.name}

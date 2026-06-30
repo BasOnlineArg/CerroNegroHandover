@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { FleetType, WorkOrder, Notification, FRM_RISKS } from '../types';
+import { FleetType, WorkOrder, Notification } from '../types';
 import * as XLSX from 'xlsx';
 import { KPISection } from './KPISection';
-import { FRMChecklist } from './FRMChecklist';
+import { RiskChecklist } from './FRMChecklist';
 
 interface Props {
   fleet: FleetType;
@@ -148,7 +148,7 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
-            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Responsable de Inspección</label>
+            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Responsable del Turno</label>
             <div className="relative group">
               <i className="fa-solid fa-user-check absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition"></i>
               <input 
@@ -178,7 +178,7 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <i className="fa-solid fa-toolbox text-blue-600"></i> Ordenes de Trabajo
+            <i className="fa-solid fa-toolbox text-blue-600"></i> Tareas / Acciones
           </h3>
           <div className="flex gap-3">
             <button 
@@ -188,7 +188,7 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
               <i className="fa-solid fa-file-excel"></i> Importar de Excel
             </button>
             <button onClick={addOT} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-black hover:bg-slate-700 transition uppercase tracking-widest shadow-sm">
-              + Agregar OT
+              + Agregar Tarea
             </button>
           </div>
         </div>
@@ -197,9 +197,9 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
           <table className="min-w-full divide-y divide-slate-100">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-8 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">OT ID</th>
-                <th className="px-8 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción del Trabajo</th>
-                <th className="px-8 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Observación/BKL</th>
+                <th className="px-8 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">ID Tarea</th>
+                <th className="px-8 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
+                <th className="px-8 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Observación / Bloqueo</th>
                 <th className="px-8 py-4 text-center text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">Estado</th>
               </tr>
             </thead>
@@ -226,7 +226,7 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <i className="fa-solid fa-circle-exclamation text-amber-500"></i> Avisos Generados
+            <i className="fa-solid fa-circle-exclamation text-amber-500"></i> Novedades del Turno
           </h3>
           <div className="flex gap-3">
             <button 
@@ -236,7 +236,7 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
               <i className="fa-solid fa-file-excel"></i> Importar de Excel
             </button>
             <button onClick={addAviso} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-black hover:bg-slate-700 transition uppercase tracking-widest shadow-sm">
-              + Generar Aviso
+              + Agregar Novedad
             </button>
           </div>
         </div>
@@ -244,16 +244,16 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {notifications.map((aviso) => (
             <div key={aviso.id} className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex gap-3 group focus-within:ring-2 focus-within:ring-blue-500/10">
-              <input className="w-24 bg-transparent outline-none text-xs font-black text-slate-800 border-r border-slate-200 pr-2" placeholder="Nº Aviso" value={aviso.avisoNumber} onChange={(e) => updateAviso(aviso.id, 'avisoNumber', e.target.value)}/>
+              <input className="w-24 bg-transparent outline-none text-xs font-black text-slate-800 border-r border-slate-200 pr-2" placeholder="Nº / Ref." value={aviso.avisoNumber} onChange={(e) => updateAviso(aviso.id, 'avisoNumber', e.target.value)}/>
               <input className="flex-1 bg-transparent outline-none text-xs" placeholder="Detalle del hallazgo..." value={aviso.description} onChange={(e) => updateAviso(aviso.id, 'description', e.target.value)}/>
             </div>
           ))}
         </div>
       </div>
 
-      {/* SECCIÓN 4: Control de Riesgos Críticos (FRM) */}
+      {/* SECCIÓN 4: Control de Riesgos Críticos */}
       <div className="pt-4">
-        <FRMChecklist selectedRisks={selectedRisks} toggleRisk={toggleRisk} />
+        <RiskChecklist selectedRisks={selectedRisks} toggleRisk={toggleRisk} />
       </div>
 
       {/* SECCIÓN 5: Comentarios Generales */}
@@ -261,9 +261,9 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
           <i className="fa-solid fa-comment-dots text-slate-400"></i> Observaciones Finales
         </h3>
-        <textarea 
+        <textarea
           className="w-full h-32 p-6 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm leading-relaxed"
-          placeholder="Notas adicionales sobre el estado del sector..."
+          placeholder="Notas adicionales para el turno entrante..."
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
