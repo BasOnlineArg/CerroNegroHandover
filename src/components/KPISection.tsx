@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { FleetType, HandoverEntry } from '../types';
+import { HandoverEntry, TeamConfig } from '../types';
 
 
 interface KPIStats {
@@ -16,9 +16,10 @@ interface Props {
   entries: HandoverEntry[];
   title: string;
   isGlobal?: boolean;
+  teams?: TeamConfig[];
 }
 
-export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }) => {
+export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false, teams = [] }) => {
   const calculateStats = (data: HandoverEntry[]): KPIStats => {
     let otsGenerated = 0;
     let otsOpen = 0;
@@ -82,12 +83,13 @@ export const KPISection: React.FC<Props> = ({ entries, title, isGlobal = false }
   );
 
   const FleetDistribution = () => {
-    const fleetData = Object.values(FleetType)
-      .filter(f => f !== FleetType.GLOBAL_KPIS)
-      .map(f => ({
-        name: f,
-        count: entries.filter(e => e.fleet === f).reduce((acc, curr) => acc + curr.ots.length, 0)
-      }));
+    const teamNames = teams.length > 0
+      ? teams.map(t => t.name)
+      : [...new Set(entries.map(e => e.fleet))];
+    const fleetData = teamNames.map(f => ({
+      name: f,
+      count: entries.filter(e => e.fleet === f).reduce((acc, curr) => acc + curr.ots.length, 0)
+    }));
 
     const maxFleetCount = Math.max(...fleetData.map(f => f.count), 1);
 

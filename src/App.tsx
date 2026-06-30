@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FleetType, HandoverEntry, UserRole, UserProfile } from './types';
+import { HandoverEntry, UserRole, UserProfile } from './types';
 import { HandoverForm } from './components/HandoverForm';
 import { KPISection } from './components/KPISection';
 import { HistoryDetails } from './components/HistoryDetails';
@@ -12,6 +12,9 @@ import {
   AppwriteUser
 } from './appwrite';
 import { INITIAL_WHITELIST } from './constants/whitelist';
+import { useAppConfig } from './context/AppConfig';
+
+const KPIS_VIEW = '__KPIS__';
 
 type AnyUser = AppwriteUser | { $id: string; email: string; name: string };
 
@@ -20,7 +23,8 @@ const docToHandoverEntry = (doc: any): HandoverEntry => ({
   timestamp: doc.timestamp || doc.$createdAt,
   shiftDate: doc.shiftDate,
   weekOfYear: doc.weekOfYear,
-  fleet: doc.fleet as FleetType,
+  fleet: doc.fleet as string,
+  subteam: doc.subteam || undefined,
   ots: typeof doc.ots === 'string' ? JSON.parse(doc.ots || '[]') : (doc.ots ?? []),
   notifications: typeof doc.notifications === 'string' ? JSON.parse(doc.notifications || '[]') : (doc.notifications ?? []),
   generalNotes: doc.generalNotes || '',
@@ -30,7 +34,8 @@ const docToHandoverEntry = (doc: any): HandoverEntry => ({
 });
 
 const App: React.FC = () => {
-  const [activeFleet, setActiveFleet] = useState<FleetType | 'ADMIN'>(FleetType.OPERATIONS);
+  const { config } = useAppConfig();
+  const [activeFleet, setActiveFleet] = useState<string>('');
   const [history, setHistory] = useState<HandoverEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<HandoverEntry | null>(null);
   const [user, setUser] = useState<AnyUser | null>(null);
@@ -43,26 +48,10 @@ const App: React.FC = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
 
-  const canSeeFleet = (role: UserRole | undefined, fleet: FleetType | 'ADMIN'): boolean => {
+  const canSeeFleet = (role: UserRole | undefined, fleet: string): boolean => {
     if (!role) return false;
-    if (role === UserRole.ADMIN) return true;
-    if (fleet === 'ADMIN') return false;
-    if (role === UserRole.MANAGER || role === UserRole.SUPERVISOR) return true;
-    if (fleet === FleetType.GLOBAL_KPIS) return true;
-    switch (role) {
-      case UserRole.OPERATOR:
-        return fleet === FleetType.OPERATIONS;
-      case UserRole.ANALYST:
-        return fleet === FleetType.ENGINEERING || fleet === FleetType.QUALITY;
-      case UserRole.TECHNICIAN:
-        return fleet === FleetType.MAINTENANCE;
-      case UserRole.VIEWER:
-        return fleet === FleetType.LOGISTICS;
-      case UserRole.SUPPORT_ROLE:
-        return fleet === FleetType.SUPPORT;
-      default:
-        return false;
-    }
+    if (fleet === 'ADMIN') return role === UserRole.ADMIN;
+    return true; // all authenticated users see all teams
   };
 
   const resolveRoleFromWhitelist = async (email: string): Promise<UserRole> => {
@@ -91,9 +80,8 @@ const App: React.FC = () => {
         createdAt: doc.createdAt || doc.$createdAt,
       };
       setUserProfile(profile);
-      if (!canSeeFleet(profile.role, activeFleet as FleetType)) {
-        const first = Object.values(FleetType).find(f => canSeeFleet(profile.role, f));
-        if (first) setActiveFleet(first);
+      if (!activeFleet) {
+        setActiveFleet(config.teams[0]?.name || '');
       }
     } catch {
       // Profile doesn't exist yet — create it
@@ -147,7 +135,7 @@ const App: React.FC = () => {
         [Query.orderDesc('$createdAt'), Query.limit(500)]
       );
       const entries = result.documents.map(docToHandoverEntry);
-      setHistory(entries.filter(e => canSeeFleet(profile.role, e.fleet)));
+      setHistory(entries);
     } catch (error) {
       console.error('Error loading handovers:', error);
     }
@@ -260,6 +248,7 @@ const App: React.FC = () => {
         shiftDate: entry.shiftDate,
         weekOfYear: entry.weekOfYear,
         fleet: entry.fleet,
+        subteam: entry.subteam || '',
         author: entry.author,
         generalNotes: entry.generalNotes || '',
         ots: JSON.stringify(entry.ots ?? []),
@@ -290,26 +279,24 @@ const App: React.FC = () => {
     setHistory([]);
   };
 
-  const handleFleetChange = (fleet: FleetType | 'ADMIN') => {
+  const handleFleetChange = (fleet: string) => {
     setActiveFleet(fleet);
     setSelectedEntry(null);
   };
 
+  // Set default fleet once config loads
+  useEffect(() => {
+    if (!activeFleet && config.teams.length > 0) {
+      setActiveFleet(config.teams[0].name);
+    }
+  }, [config.teams, activeFleet]);
+
   const filteredHistory = history.filter(item => item.fleet === activeFleet);
-  const isKPIView = activeFleet === FleetType.GLOBAL_KPIS;
+  const isKPIView = activeFleet === KPIS_VIEW;
   const isAdminView = activeFleet === 'ADMIN';
 
-  const getFleetIcon = (fleet: FleetType) => {
-    switch (fleet) {
-      case FleetType.OPERATIONS:   return 'fa-gears';
-      case FleetType.ENGINEERING:  return 'fa-screwdriver-wrench';
-      case FleetType.MAINTENANCE:  return 'fa-toolbox';
-      case FleetType.QUALITY:      return 'fa-circle-check';
-      case FleetType.LOGISTICS:    return 'fa-truck';
-      case FleetType.SUPPORT:      return 'fa-headset';
-      case FleetType.GLOBAL_KPIS:  return 'fa-chart-line';
-      default: return 'fa-folder';
-    }
+  const getFleetIcon = (teamName: string) => {
+    return config.teams.find(t => t.name === teamName)?.icon || 'fa-folder';
   };
 
   const formatTimestamp = (ts: string) => {
@@ -438,21 +425,21 @@ const App: React.FC = () => {
         </div>
 
         <nav className="flex-1 mt-6 overflow-y-auto px-4 space-y-2">
-          <div className="px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest">Sectores Operativos</div>
-          {Object.values(FleetType).filter(f => f !== FleetType.GLOBAL_KPIS && canSeeFleet(userProfile.role, f)).map((fleet) => (
-            <button key={fleet} onClick={() => handleFleetChange(fleet)}
+          <div className="px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest">Equipos de Trabajo</div>
+          {config.teams.map((team) => (
+            <button key={team.id} onClick={() => handleFleetChange(team.name)}
               className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
-                activeFleet === fleet && !isKPIView && !isAdminView
+                activeFleet === team.name && !isKPIView && !isAdminView
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}>
-              <i className={`fa-solid ${getFleetIcon(fleet)} w-5 text-center`}></i>
-              <span className="text-xs font-bold">{fleet}</span>
+              <i className={`fa-solid ${team.icon} w-5 text-center`}></i>
+              <span className="text-xs font-bold">{team.name}</span>
             </button>
           ))}
 
           <div className="pt-6 px-4 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest border-t border-slate-800 mt-4">Analítica</div>
-          <button onClick={() => handleFleetChange(FleetType.GLOBAL_KPIS)}
+          <button onClick={() => handleFleetChange(KPIS_VIEW)}
             className={`w-full text-left px-4 py-3.5 rounded-xl transition-all flex items-center gap-3 group ${
               isKPIView ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}>
@@ -522,13 +509,14 @@ const App: React.FC = () => {
             {isAdminView ? (
               <AdminPanel isDemo={isDemo} />
             ) : isKPIView ? (
-              <KPISection entries={history} title="Tablero de Confiabilidad" isGlobal={true} />
+              <KPISection entries={history} title="Tablero de Métricas Globales" isGlobal={true} teams={config.teams} />
             ) : selectedEntry ? (
               <HistoryDetails entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
             ) : (
               <div className="animate-in fade-in duration-500">
                 <HandoverForm
-                  fleet={activeFleet as FleetType}
+                  fleet={activeFleet}
+                  subteams={config.teams.find(t => t.name === activeFleet)?.subteams}
                   onSubmit={handleHandoverSubmit}
                   history={history}
                   currentUser={{ displayName: user.name, email: user.email }}

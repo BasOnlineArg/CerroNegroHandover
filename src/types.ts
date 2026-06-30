@@ -9,6 +9,18 @@ export enum FleetType {
   GLOBAL_KPIS = "KPIs Globales"
 }
 
+export interface TeamConfig {
+  id: string;
+  name: string;
+  icon: string;
+  subteams: string[];
+}
+
+export interface CompanyConfig {
+  companyName: string;
+  teams: TeamConfig[];
+}
+
 export enum UserRole {
   ADMIN = "admin",
   MANAGER = "manager",
@@ -80,7 +92,8 @@ export interface HandoverEntry {
   timestamp: string;
   shiftDate: string;
   weekOfYear: number;
-  fleet: FleetType;
+  fleet: string;
+  subteam?: string;
   ots: WorkOrder[];
   notifications: Notification[];
   generalNotes: string;

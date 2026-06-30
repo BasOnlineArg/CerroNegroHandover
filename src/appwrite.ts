@@ -17,6 +17,7 @@ export const COLLECTIONS = {
   HANDOVERS: 'handovers',
   WHITELIST: 'whitelist',
   LOGS: 'logs',
+  SETTINGS: 'settings',
 } as const;
 
 export const signInWithEmail = (email: string, password: string) =>

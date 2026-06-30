@@ -111,6 +111,26 @@ async function main() {
     console.log('  ✓ logs atributos creados');
   });
 
+  // 6. Colección: settings (configuración de empresa - configurable por el admin)
+  await createCollection(DATABASE_ID, 'settings', 'Configuración', async () => {
+    await createAttr(db.createStringAttribute.bind(db), DATABASE_ID, 'settings', 'companyName', 256, false);
+    await createAttr(db.createStringAttribute.bind(db), DATABASE_ID, 'settings', 'teamsJson', 65536, false);
+    console.log('  ✓ settings atributos creados');
+  });
+
+  // 7. Agregar subteam a handovers
+  await createAttr(db.createStringAttribute.bind(db), DATABASE_ID, 'handovers', 'subteam', 100, false);
+  console.log('  ✓ handovers.subteam verificado');
+
+  // 8. Migrar role en users de enum a string
+  try {
+    await db.deleteAttribute(DATABASE_ID, 'users', 'role');
+    await sleep(2000);
+    console.log('  ↻ role enum eliminado, recreando como string...');
+  } catch { /* ya es string o no existe, omitir */ }
+  await createAttr(db.createStringAttribute.bind(db), DATABASE_ID, 'users', 'role', 50, false);
+  console.log('  ✓ users.role verificado');
+
   console.log('\n✅ Setup completado!');
   console.log(`\nAgregá esto a tu .env.local:\nVITE_APPWRITE_DATABASE_ID=${DATABASE_ID}\n`);
 }

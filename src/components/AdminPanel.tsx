@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { databases, DATABASE_ID, COLLECTIONS, ID, Query } from '../appwrite';
-import { UserProfile, UserRole, ActionLog } from '../types';
+import { UserProfile, UserRole, ActionLog, TeamConfig } from '../types';
+import { useAppConfig, CompanyConfig, DEFAULT_CONFIG } from '../context/AppConfig';
 
 interface Props {
   isDemo?: boolean;
@@ -21,16 +22,45 @@ const addLog = (action: string, details: string) =>
     details,
   }).catch(() => { /* non-fatal */ });
 
+const ROLE_LABELS: Record<UserRole, string> = {
+  [UserRole.ADMIN]: 'Administrador',
+  [UserRole.MANAGER]: 'Gerente',
+  [UserRole.SUPERVISOR]: 'Supervisor',
+  [UserRole.OPERATOR]: 'Operador',
+  [UserRole.ANALYST]: 'Analista',
+  [UserRole.TECHNICIAN]: 'Técnico',
+  [UserRole.VIEWER]: 'Solo Lectura',
+  [UserRole.SUPPORT_ROLE]: 'Soporte',
+};
+
+const TEAM_ICONS = [
+  'fa-gears','fa-screwdriver-wrench','fa-toolbox','fa-circle-check',
+  'fa-truck','fa-headset','fa-flask','fa-bolt-lightning','fa-fire-flame-curved',
+  'fa-chart-line','fa-code','fa-building','fa-people-group','fa-leaf',
+];
+
 export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
+  const { config, saveConfig } = useAppConfig();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([]);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'users' | 'config' | 'logs'>('users');
 
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>(UserRole.OPERATOR);
   const [isAdding, setIsAdding] = useState(false);
+
+  // Config editor state
+  const [editConfig, setEditConfig] = useState<CompanyConfig>({ ...config, teams: config.teams.map(t => ({ ...t, subteams: [...t.subteams] })) });
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newSubteamInputs, setNewSubteamInputs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setEditConfig({ ...config, teams: config.teams.map(t => ({ ...t, subteams: [...t.subteams] })) });
+  }, [config]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -150,6 +180,44 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
     }
   };
 
+  const addTeam = () => {
+    if (!newTeamName.trim()) return;
+    const team: TeamConfig = { id: crypto.randomUUID(), name: newTeamName.trim(), icon: 'fa-folder', subteams: [] };
+    setEditConfig(c => ({ ...c, teams: [...c.teams, team] }));
+    setNewTeamName('');
+  };
+
+  const removeTeam = (id: string) =>
+    setEditConfig(c => ({ ...c, teams: c.teams.filter(t => t.id !== id) }));
+
+  const updateTeam = (id: string, patch: Partial<TeamConfig>) =>
+    setEditConfig(c => ({ ...c, teams: c.teams.map(t => t.id === id ? { ...t, ...patch } : t) }));
+
+  const addSubteam = (teamId: string) => {
+    const val = (newSubteamInputs[teamId] || '').trim();
+    if (!val) return;
+    updateTeam(teamId, { subteams: [...(editConfig.teams.find(t => t.id === teamId)?.subteams || []), val] });
+    setNewSubteamInputs(p => ({ ...p, [teamId]: '' }));
+  };
+
+  const removeSubteam = (teamId: string, sub: string) => {
+    const team = editConfig.teams.find(t => t.id === teamId);
+    if (!team) return;
+    updateTeam(teamId, { subteams: team.subteams.filter(s => s !== sub) });
+  };
+
+  const handleSaveConfig = async () => {
+    setIsSavingConfig(true);
+    try {
+      await saveConfig(editConfig);
+      alert('Configuración guardada exitosamente.');
+    } catch {
+      alert('Error al guardar la configuración.');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   if (loading) return <div className="p-10 text-center">Cargando panel de administración...</div>;
 
   if (isDemo) {
@@ -165,13 +233,115 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
   }
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-500">
-      {/* Refresh button */}
-      <div className="flex justify-end">
-        <button onClick={loadAll} className="bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-slate-700 transition">
-          <i className="fa-solid fa-arrows-rotate mr-2"></i>Actualizar
-        </button>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Tab nav */}
+      <div className="flex gap-2 border-b border-slate-200 pb-0">
+        {(['users','config','logs'] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-t-lg transition ${activeTab === tab ? 'bg-white border border-b-white border-slate-200 text-blue-600 -mb-px' : 'text-slate-400 hover:text-slate-600'}`}>
+            {tab === 'users' ? 'Usuarios' : tab === 'config' ? 'Configuración' : 'Logs'}
+          </button>
+        ))}
+        <div className="flex-1 flex justify-end items-center pb-1">
+          <button onClick={loadAll} className="bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-slate-700 transition">
+            <i className="fa-solid fa-arrows-rotate mr-2"></i>Actualizar
+          </button>
+        </div>
       </div>
+
+      {/* Config tab */}
+      {activeTab === 'config' && (
+        <div className="space-y-8">
+          <section className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8">
+            <h2 className="text-lg font-black uppercase tracking-tight text-slate-800 mb-6 flex items-center gap-3">
+              <i className="fa-solid fa-building text-blue-600"></i> Nombre de la Empresa
+            </h2>
+            <input
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+              value={editConfig.companyName}
+              onChange={e => setEditConfig(c => ({ ...c, companyName: e.target.value }))}
+              placeholder="Nombre de tu empresa u organización"
+            />
+          </section>
+
+          <section className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8">
+            <h2 className="text-lg font-black uppercase tracking-tight text-slate-800 mb-6 flex items-center gap-3">
+              <i className="fa-solid fa-people-group text-blue-600"></i> Equipos de Trabajo
+            </h2>
+            <div className="space-y-4">
+              {editConfig.teams.map(team => (
+                <div key={team.id} className="border border-slate-200 rounded-2xl p-5 space-y-3">
+                  <div className="flex gap-3 items-center">
+                    <select
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none"
+                      value={team.icon}
+                      onChange={e => updateTeam(team.id, { icon: e.target.value })}
+                    >
+                      {TEAM_ICONS.map(ic => <option key={ic} value={ic}>{ic.replace('fa-', '')}</option>)}
+                    </select>
+                    <input
+                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-blue-400"
+                      value={team.name}
+                      onChange={e => updateTeam(team.id, { name: e.target.value })}
+                      placeholder="Nombre del equipo"
+                    />
+                    <button onClick={() => removeTeam(team.id)} className="text-red-400 hover:text-red-600 transition p-2">
+                      <i className="fa-solid fa-trash text-sm"></i>
+                    </button>
+                  </div>
+                  <div className="pl-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Sub-equipos</p>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {team.subteams.map(st => (
+                        <span key={st} className="bg-blue-50 text-blue-700 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-2 border border-blue-200">
+                          {st}
+                          <button onClick={() => removeSubteam(team.id, st)} className="text-blue-400 hover:text-red-500 transition">
+                            <i className="fa-solid fa-xmark text-[9px]"></i>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-400"
+                        placeholder="+ Agregar sub-equipo"
+                        value={newSubteamInputs[team.id] || ''}
+                        onChange={e => setNewSubteamInputs(p => ({ ...p, [team.id]: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && addSubteam(team.id)}
+                      />
+                      <button onClick={() => addSubteam(team.id)} className="bg-blue-600 text-white text-[10px] font-black px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
+                        Agregar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-4">
+              <input
+                className="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+                placeholder="Nombre del nuevo equipo..."
+                value={newTeamName}
+                onChange={e => setNewTeamName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addTeam()}
+              />
+              <button onClick={addTeam} className="bg-slate-900 text-white text-[10px] font-black px-5 py-3 rounded-xl hover:bg-slate-700 transition uppercase tracking-widest">
+                + Agregar Equipo
+              </button>
+            </div>
+          </section>
+
+          <div className="flex justify-end">
+            <button onClick={handleSaveConfig} disabled={isSavingConfig}
+              className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-blue-700 transition shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center gap-3">
+              {isSavingConfig ? <><i className="fa-solid fa-spinner fa-spin"></i> Guardando...</> : <><i className="fa-solid fa-floppy-disk"></i> Guardar Configuración</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Users tab */}
+      {activeTab === 'users' && <div className="space-y-10">
 
       {/* Add User Form */}
       <section className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
@@ -196,7 +366,7 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rol</label>
             <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as UserRole)}
               className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-0 transition uppercase font-bold">
-              {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
+              {Object.values(UserRole).map(role => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}
             </select>
           </div>
           <button type="submit" disabled={isAdding}
@@ -234,7 +404,7 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
                   <td className="px-8 py-4">
                     <select value={entry.role} onChange={(e) => handleUpdateWhitelistRole(entry, e.target.value as UserRole)}
                       className="bg-slate-100 border-none rounded-lg text-[10px] font-black uppercase px-3 py-2 focus:ring-2 focus:ring-blue-500">
-                      {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
+                      {Object.values(UserRole).map(role => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}
                     </select>
                   </td>
                   <td className="px-8 py-4">
@@ -274,7 +444,7 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
                   <td className="px-8 py-4">
                     <select value={u.role} onChange={(e) => handleRoleChange(u.uid, e.target.value as UserRole)}
                       className="bg-slate-100 border-none rounded-lg text-[10px] font-black uppercase px-3 py-2 focus:ring-2 focus:ring-blue-500">
-                      {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
+                      {Object.values(UserRole).map(role => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}
                     </select>
                   </td>
                   <td className="px-8 py-4 text-center">
@@ -289,32 +459,36 @@ export const AdminPanel: React.FC<Props> = ({ isDemo }) => {
         </div>
       </section>
 
-      {/* Audit Logs */}
-      <section className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-slate-900 px-8 py-6 text-white">
-          <h2 className="text-xl font-black uppercase tracking-tight">Log de Acciones</h2>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Historial de auditoría del sistema</p>
-        </div>
-        <div className="max-h-[400px] overflow-y-auto p-6 space-y-3 bg-slate-50/50">
-          {logs.map(log => (
-            <div key={log.id} className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-start gap-4">
-              <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 shrink-0">
-                <i className="fa-solid fa-clock-rotate-left"></i>
-              </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{log.action}</span>
-                  <span className="text-[9px] font-bold text-slate-400">
-                    {log.timestamp ? new Date(log.timestamp as string).toLocaleString('es-AR') : 'Reciente'}
-                  </span>
+      </div>}
+
+      {/* Logs tab */}
+      {activeTab === 'logs' && (
+        <section className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+          <div className="bg-slate-900 px-8 py-6 text-white">
+            <h2 className="text-xl font-black uppercase tracking-tight">Log de Acciones</h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Historial de auditoría del sistema</p>
+          </div>
+          <div className="max-h-[600px] overflow-y-auto p-6 space-y-3 bg-slate-50/50">
+            {logs.map(log => (
+              <div key={log.id} className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-start gap-4">
+                <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 shrink-0">
+                  <i className="fa-solid fa-clock-rotate-left"></i>
                 </div>
-                <p className="text-xs text-slate-700 font-medium">{log.details}</p>
-                <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Por: {log.userEmail || 'Sistema'}</p>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{log.action}</span>
+                    <span className="text-[9px] font-bold text-slate-400">
+                      {log.timestamp ? new Date(log.timestamp as string).toLocaleString('es-AR') : 'Reciente'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-700 font-medium">{log.details}</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Por: {log.userEmail || 'Sistema'}</p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

@@ -25,6 +25,42 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
     }
   };
 
+  const handleExportPDF = () => {
+    const esc = (s: string) =>
+      String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const riskNames = (entry.frmRisks || []).map(id => {
+      const r = RISK_ITEMS.find(r => r.id === id);
+      return r ? esc(r.name) : esc(id);
+    });
+
+    const otRows = (entry.ots || []).map(o =>
+      `<tr><td>${esc(o.otNumber)}</td><td>${esc(o.description)}</td><td>${esc(o.bkls || '-')}</td><td>${o.isClosed ? '&#10003;' : '&#9203;'}</td></tr>`
+    ).join('');
+
+    const notifRows = (entry.notifications || []).map(n =>
+      `<tr><td>${esc(n.avisoNumber)}</td><td>${esc(n.description)}</td></tr>`
+    ).join('');
+
+    const css = `body{font-family:Arial,sans-serif;color:#111;padding:30px}h1{font-size:20px;margin-bottom:4px}.meta{color:#555;font-size:12px;margin-bottom:24px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:#444;border-bottom:1px solid #ddd;padding-bottom:6px;margin-top:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}th,td{padding:8px;text-align:left;border:1px solid #e0e0e0}th{background:#f5f5f5;font-weight:bold}.notes{background:#f9f9f9;padding:12px;border-radius:4px;font-size:13px;white-space:pre-wrap}.badge{display:inline-block;background:#ffe0cc;color:#a03000;padding:3px 8px;border-radius:4px;font-size:11px;margin:2px}@media print{body{padding:10px}}`;
+
+    const teamLabel = esc(entry.fleet) + (entry.subteam ? ` / ${esc(entry.subteam)}` : '');
+    const body = [
+      `<h1>Pase de Turno &#8212; ${esc(entry.author)}</h1>`,
+      `<div class="meta">Equipo: ${teamLabel} &nbsp;|&nbsp; Fecha: ${esc(entry.shiftDate)} &nbsp;|&nbsp; Semana ${entry.weekOfYear}</div>`,
+      otRows ? `<h2>Tareas / Acciones</h2><table><thead><tr><th>ID</th><th>Descripci&#243;n</th><th>Observaci&#243;n</th><th>Estado</th></tr></thead><tbody>${otRows}</tbody></table>` : '',
+      notifRows ? `<h2>Novedades del Turno</h2><table><thead><tr><th>Ref.</th><th>Descripci&#243;n</th></tr></thead><tbody>${notifRows}</tbody></table>` : '',
+      riskNames.length ? `<h2>Riesgos Identificados</h2><p>${riskNames.map(r => `<span class="badge">${r}</span>`).join('')}</p>` : '',
+      entry.generalNotes ? `<h2>Observaciones Finales</h2><div class="notes">${esc(entry.generalNotes)}</div>` : '',
+    ].join('');
+
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Pase de Turno - ${esc(entry.author)}</title><style>${css}</style></head><body onload="window.print()">${body}</body></html>`;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const tab = window.open(url, '_blank');
+    if (tab) setTimeout(() => URL.revokeObjectURL(url), 15000);
+  };
+
   const formatTimestamp = (ts: string) => {
     try {
       const date = new Date(ts);
@@ -60,12 +96,20 @@ export const HistoryDetails: React.FC<Props> = ({ entry, onClose }) => {
               </p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="bg-white/5 hover:bg-white/10 p-4 rounded-xl transition-all flex items-center gap-3 text-xs font-black uppercase tracking-widest border border-white/10"
-          >
-            <i className="fa-solid fa-arrow-left"></i> Volver
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleExportPDF}
+              className="bg-emerald-700/40 hover:bg-emerald-600/60 p-4 rounded-xl transition-all flex items-center gap-3 text-xs font-black uppercase tracking-widest border border-emerald-500/30"
+            >
+              <i className="fa-solid fa-file-pdf"></i> Exportar PDF
+            </button>
+            <button
+              onClick={onClose}
+              className="bg-white/5 hover:bg-white/10 p-4 rounded-xl transition-all flex items-center gap-3 text-xs font-black uppercase tracking-widest border border-white/10"
+            >
+              <i className="fa-solid fa-arrow-left"></i> Volver
+            </button>
+          </div>
         </div>
 
         <div className="p-10 space-y-12">

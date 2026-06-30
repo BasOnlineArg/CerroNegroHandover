@@ -1,25 +1,27 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { FleetType, WorkOrder, Notification } from '../types';
+import { WorkOrder, Notification } from '../types';
 import * as XLSX from 'xlsx';
 import { KPISection } from './KPISection';
 import { RiskChecklist } from './FRMChecklist';
 
 interface Props {
-  fleet: FleetType;
+  fleet: string;
+  subteams?: string[];
   onSubmit: (entry: any) => void;
-  history: any[]; 
+  history: any[];
   currentUser: any;
 }
 
-export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, currentUser }) => {
+export const HandoverForm: React.FC<Props> = ({ fleet, subteams = [], onSubmit, history, currentUser }) => {
   const [ots, setOts] = useState<WorkOrder[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notes, setNotes] = useState('');
   const [author, setAuthor] = useState(currentUser?.displayName || currentUser?.email?.split('@')[0] || '');
   const [selectedRisks, setSelectedRisks] = useState<string[]>([]);
   const [shiftDate, setShiftDate] = useState(new Date().toISOString().split('T')[0]);
-  
+  const [subteam, setSubteam] = useState('');
+
   const [error, setError] = useState<string | null>(null);
   
   const otInputRef = useRef<HTMLInputElement>(null);
@@ -113,10 +115,11 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
     
     onSubmit({
       fleet,
+      subteam: subteams.length > 0 ? subteam : undefined,
       ots,
       notifications,
       generalNotes: notes,
-      timestamp: new Date().toISOString(), // Use ISO string for better sorting/filtering
+      timestamp: new Date().toISOString(),
       shiftDate,
       weekOfYear: currentWeek,
       author,
@@ -128,6 +131,7 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
     setNotes('');
     setAuthor('');
     setSelectedRisks([]);
+    setSubteam('');
     setError(null);
   };
 
@@ -147,6 +151,22 @@ export const HandoverForm: React.FC<Props> = ({ fleet, onSubmit, history, curren
            <i className="fa-solid fa-id-card text-blue-600"></i> Identificación del Turno
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {subteams.length > 0 && (
+            <div className="md:col-span-2">
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Sub-equipo</label>
+              <div className="relative group">
+                <i className="fa-solid fa-sitemap absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition"></i>
+                <select
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm font-bold transition-all appearance-none"
+                  value={subteam}
+                  onChange={(e) => setSubteam(e.target.value)}
+                >
+                  <option value="">— Seleccionar sub-equipo —</option>
+                  {subteams.map(st => <option key={st} value={st}>{st}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Responsable del Turno</label>
             <div className="relative group">
